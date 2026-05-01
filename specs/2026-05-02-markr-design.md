@@ -480,7 +480,7 @@ FROM (
 
 ### 8.4 Response shape
 
-`count == 0` → 404 `not_found`. Never serve an empty `count: 0` shell — that would lie about an aggregate that does not exist.
+`count == 0` → `MarkrHTTPException(404, "not_found", f"no results for test_id={test_id}", {"reason": "no_matching_rows", "test_id": test_id})`. Never serve an empty `count: 0` shell — that would lie about an aggregate that does not exist. The `details.reason` lets clients distinguish from the unknown-route 404 emitted by §9.5.
 
 `count >= 1` → 200 with the following JSON, **field order locked**:
 
@@ -532,7 +532,7 @@ All non-2xx responses return JSON:
 | HTTP | `error` code | Trigger |
 |---|---|---|
 | 400 | `malformed_xml` | XML parse failure (including empty / whitespace-only body) |
-| 404 | `not_found` | GET aggregate with zero matching rows |
+| 404 | `not_found` | Unknown route, OR GET aggregate with zero matching rows. Both produce the same envelope; clients can disambiguate by `details.reason` (`"unknown_route"` vs `"no_matching_rows"`) when set |
 | 405 | `method_not_allowed` | Wrong HTTP method on any route (e.g. PUT on `/import`, POST on `/results/.../aggregate`). FastAPI's auto-generated 405 is converted to envelope by the global handler in §9.5 |
 | 413 | `body_too_large` | Request body exceeds 10 MiB |
 | 413 | `record_count_exceeded` | More than 10,000 `<mcq-test-result>` rows |
@@ -586,12 +586,13 @@ This satisfies §3.1's typed-boundary mandate (the `error` field is a typed `str
 
 ### 9.5 Global exception handlers
 
-Three handlers are registered on the FastAPI app to ensure every non-2xx response conforms to the §9.1 envelope:
+Four handlers are registered on the FastAPI app to ensure every non-2xx response conforms to the §9.1 envelope:
 
 1. **`MarkrHTTPException`** → read `exc.error`, `exc.message`, `exc.details` directly; emit envelope at `exc.status_code`.
-2. **`StarletteHTTPException`** (catches FastAPI's auto-generated 405 on wrong-method, plus any plain `HTTPException` slipping through) → map status to a default `error` code:
+2. **`StarletteHTTPException`** (catches Starlette's framework-raised exceptions — unknown-route 404, wrong-method 405, plus any plain `HTTPException` slipping through) → map status to a default `error` code:
+   - `404 → not_found` with `details: {"reason": "unknown_route"}`
    - `405 → method_not_allowed`
-   - other statuses → `internal_error` (logged as a programming bug — every spec'd raise-site should have used `MarkrHTTPException`).
+   - other statuses → `internal_error` (logged as a programming bug — every spec'd application raise-site should have used `MarkrHTTPException`).
 3. **`RequestValidationError`** (FastAPI's auto-generated 422 from Path/Query/Body validators — fired e.g. when `test_id` exceeds 256 chars before our `.strip()` runs) → emit `{error: "invalid_path_param", message: "request validation failed", details: {<field>: [...]}}`.
 4. **`Exception`** (catch-all) → 500 `{error: "internal_error", message: "internal server error"}`. Stack trace is logged server-side only.
 
