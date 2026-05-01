@@ -126,6 +126,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markr"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/markr/db/schema.sql" = "markr/db/schema.sql"
 ```
 
 - [ ] **Step 3: Lock + install**
