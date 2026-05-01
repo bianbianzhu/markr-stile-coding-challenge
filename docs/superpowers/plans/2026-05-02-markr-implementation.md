@@ -3089,7 +3089,7 @@ git commit -m "test: aggregation math is per-student mean, no app rounding (spec
 
 **Spec:** §8, brief example
 
-- [ ] **Step 1: Bring up + reload sample**
+- [x] **Step 1: Bring up + reload sample**
 
 ```bash
 docker compose down -v
@@ -3098,7 +3098,7 @@ sleep 5
 curl -sS -X POST -H 'Content-Type: text/xml+markr' --data-binary @sample_results.xml http://localhost:4567/import
 ```
 
-- [ ] **Step 2: Hit aggregate for sample test_id 9863**
+- [x] **Step 2: Hit aggregate for sample test_id 9863**
 
 ```bash
 curl -sS http://localhost:4567/results/9863/aggregate
@@ -3107,7 +3107,7 @@ echo
 
 Expected: JSON object with `mean`, `stddev`, `min`, `max`, `p25`, `p50`, `p75`, `count` in that exact order, all numeric, `count > 0`.
 
-- [ ] **Step 3: Brief's example test_id 1234 (single record)**
+- [x] **Step 3: Brief's example test_id 1234 (single record)**
 
 ```bash
 curl -sS -X POST -H 'Content-Type: text/xml+markr' http://localhost:4567/import -d @- <<'XML'
@@ -3127,7 +3127,7 @@ Expected (byte-equal modulo whitespace to spec §8.4 example):
 {"mean":65.0,"stddev":0.0,"min":65.0,"max":65.0,"p25":65.0,"p50":65.0,"p75":65.0,"count":1}
 ```
 
-- [ ] **Step 4: 404 for unknown test_id**
+- [x] **Step 4: 404 for unknown test_id**
 
 ```bash
 curl -sS -o /tmp/agg404.json -w "HTTP=%{http_code}\n" http://localhost:4567/results/DOESNOTEXIST/aggregate
@@ -3136,7 +3136,7 @@ cat /tmp/agg404.json
 
 Expected: `HTTP=404`, body `{"error":"not_found",..., "details":{"reason":"no_matching_rows","test_id":"DOESNOTEXIST"}}`.
 
-- [ ] **Step 5: Tear down + commit**
+- [x] **Step 5: Tear down + commit**
 
 ```bash
 docker compose down
