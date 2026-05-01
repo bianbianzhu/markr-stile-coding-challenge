@@ -3201,7 +3201,7 @@ git commit -m "test: body cap integration on /import (spec §5.4)"
 - Create: `tests/fixtures/over_10k.py` (test-only generator helper — not a fixture file because 10k+1 inflated XML is too large to commit)
 - Create: `tests/test_record_count_cap.py`
 
-- [ ] **Step 1: Test**
+- [x] **Step 1: Test**
 
 ```python
 # tests/test_record_count_cap.py
@@ -3235,7 +3235,7 @@ async def test_10001_rejected(engine):
 
 > Note: 10,001 records of the minimal shape above (~115 bytes each) is ~1.15 MB — well under 10 MiB body cap, so this hits the record-count rejector. If the body cap fires first in your env, lower per-record size or accept either code.
 
-- [ ] **Step 2: Pass + commit**
+- [x] **Step 2: Pass + commit**
 
 ```bash
 uv run pytest tests/test_record_count_cap.py -v
