@@ -3389,13 +3389,13 @@ git commit --allow-empty -m "test(e2e): negative-path envelope matrix (spec §9.
 - Create: `tests/fixtures/sample_results.xml` (copy of repo-root file)
 - Create: `tests/test_sample_round_trip.py`
 
-- [ ] **Step 1: Copy fixture**
+- [x] **Step 1: Copy fixture**
 
 ```bash
 cp sample_results.xml tests/fixtures/sample_results.xml
 ```
 
-- [ ] **Step 2: Test**
+- [x] **Step 2: Test**
 
 ```python
 # tests/test_sample_round_trip.py
@@ -3449,7 +3449,7 @@ async def test_sample_replay_idempotent(engine):
     assert c1["count"] >= 1
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_sample_round_trip.py -v
