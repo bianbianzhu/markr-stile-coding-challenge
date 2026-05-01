@@ -3467,14 +3467,14 @@ git commit -m "test: sample fixture round-trip + idempotent replay (spec §5.5)"
 
 > **Scope note:** this checkpoint exercises the "after-COMMIT replay converges" guarantee from spec §5.5 (the bottom rows of the crash-point table). It does NOT inject an in-flight crash (`kill -9` mid-COMMIT) — that would test rows 2–4 of the matrix. Spec §5.5 only mandates the *guarantee* (idempotent replay via `GREATEST(...)`); in-flight crash injection is out of scope for the prototype.
 
-- [ ] **Step 1: Bring up**
+- [x] **Step 1: Bring up**
 
 ```bash
 docker compose up --build -d
 sleep 5
 ```
 
-- [ ] **Step 2: POST sample once, snapshot row count for test_id 9863**
+- [x] **Step 2: POST sample once, snapshot row count for test_id 9863**
 
 ```bash
 curl -sS -X POST -H 'Content-Type: text/xml+markr' --data-binary @sample_results.xml http://localhost:4567/import
@@ -3482,7 +3482,7 @@ COUNT_1=$(docker compose exec -T db psql -U markr -d markr -tAc "SELECT COUNT(*)
 echo "count after first POST: $COUNT_1"
 ```
 
-- [ ] **Step 3: Kill app mid-stride and restart**
+- [x] **Step 3: Kill app mid-stride and restart**
 
 ```bash
 docker compose restart app
@@ -3490,7 +3490,7 @@ sleep 5
 curl -sS http://localhost:4567/health
 ```
 
-- [ ] **Step 4: Replay the same payload**
+- [x] **Step 4: Replay the same payload**
 
 ```bash
 curl -sS -X POST -H 'Content-Type: text/xml+markr' --data-binary @sample_results.xml http://localhost:4567/import
@@ -3499,7 +3499,7 @@ echo "count after replay: $COUNT_2"
 test "$COUNT_1" = "$COUNT_2" && echo "OK: idempotent" || (echo "FAIL: counts diverged"; exit 1)
 ```
 
-- [ ] **Step 5: Tear down + commit**
+- [x] **Step 5: Tear down + commit**
 
 ```bash
 docker compose down
