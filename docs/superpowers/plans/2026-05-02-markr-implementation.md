@@ -2810,7 +2810,7 @@ git commit -m "feat: POST /import router (spec §5.1, §5.2)"
 
 **Spec:** §5, brief example
 
-- [ ] **Step 1: Bring up stack**
+- [x] **Step 1: Bring up stack**
 
 ```bash
 docker compose up --build -d
@@ -2818,7 +2818,7 @@ sleep 5
 curl -sS http://localhost:4567/health
 ```
 
-- [ ] **Step 2: POST sample data**
+- [x] **Step 2: POST sample data**
 
 ```bash
 curl -sS -X POST \
@@ -2835,7 +2835,7 @@ HTTP=200
 {"status":"ok"}
 ```
 
-- [ ] **Step 3: POST the brief's curl example**
+- [x] **Step 3: POST the brief's curl example**
 
 ```bash
 curl -sS -X POST -H 'Content-Type: text/xml+markr' http://localhost:4567/import \
@@ -2854,7 +2854,7 @@ XML
 
 Expected: `HTTP=200`.
 
-- [ ] **Step 4: Verify rows landed**
+- [x] **Step 4: Verify rows landed**
 
 ```bash
 docker compose exec -T db psql -U markr -d markr -c "SELECT COUNT(*) FROM test_results"
@@ -2863,7 +2863,7 @@ docker compose exec -T db psql -U markr -d markr -c "SELECT test_id, COUNT(*) FR
 
 Expected: counts > 0; `9863` group present (sample test id), `1234` group present.
 
-- [ ] **Step 5: Idempotent replay**
+- [x] **Step 5: Idempotent replay**
 
 ```bash
 curl -sS -X POST -H 'Content-Type: text/xml+markr' --data-binary @sample_results.xml \
@@ -2873,7 +2873,7 @@ docker compose exec -T db psql -U markr -d markr -c "SELECT COUNT(*) FROM test_r
 
 Expected: same count after replay (UPSERT idempotent — spec §5.5).
 
-- [ ] **Step 6: Tear down + commit**
+- [x] **Step 6: Tear down + commit**
 
 ```bash
 docker compose down
