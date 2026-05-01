@@ -3251,14 +3251,14 @@ git commit -m "test: 10k record cap (spec §5.4)"
 
 **Spec:** §9.2 (entire mapping table)
 
-- [ ] **Step 1: Bring up**
+- [x] **Step 1: Bring up**
 
 ```bash
 docker compose up --build -d
 sleep 5
 ```
 
-- [ ] **Step 2: 415 wrong content-type**
+- [x] **Step 2: 415 wrong content-type**
 
 ```bash
 curl -sS -o /tmp/415.json -w "HTTP=%{http_code}\n" -X POST \
@@ -3267,7 +3267,7 @@ cat /tmp/415.json
 ```
 Expected: `HTTP=415`, error `unsupported_media_type`.
 
-- [ ] **Step 2b: §5.3 ordering — wrong CT + oversized body must still be 415, not 413**
+- [x] **Step 2b: §5.3 ordering — wrong CT + oversized body must still be 415, not 413**
 
 ```bash
 # Send a small body but advertise a huge Content-Length to try to bait 413 first.
@@ -3279,7 +3279,7 @@ cat /tmp/415_order.json
 ```
 Expected: `HTTP=415`, error `unsupported_media_type` (proves CT check precedes body cap per spec §5.3).
 
-- [ ] **Step 3: 400 malformed**
+- [x] **Step 3: 400 malformed**
 
 ```bash
 curl -sS -o /tmp/400.json -w "HTTP=%{http_code}\n" -X POST \
@@ -3288,7 +3288,7 @@ cat /tmp/400.json
 ```
 Expected: `HTTP=400`, error `malformed_xml`.
 
-- [ ] **Step 4: 422 wrong root**
+- [x] **Step 4: 422 wrong root**
 
 ```bash
 curl -sS -o /tmp/422root.json -w "HTTP=%{http_code}\n" -X POST \
@@ -3297,7 +3297,7 @@ cat /tmp/422root.json
 ```
 Expected: `HTTP=422`, error `wrong_root`.
 
-- [ ] **Step 5: 422 empty batch**
+- [x] **Step 5: 422 empty batch**
 
 ```bash
 curl -sS -o /tmp/422empty.json -w "HTTP=%{http_code}\n" -X POST \
@@ -3307,7 +3307,7 @@ cat /tmp/422empty.json
 ```
 Expected: `HTTP=422`, error `empty_batch`.
 
-- [ ] **Step 6: 422 invalid_score**
+- [x] **Step 6: 422 invalid_score**
 
 ```bash
 curl -sS -o /tmp/422score.json -w "HTTP=%{http_code}\n" -X POST \
@@ -3323,7 +3323,7 @@ cat /tmp/422score.json
 ```
 Expected: `HTTP=422`, error `invalid_score`.
 
-- [ ] **Step 7: 422 cardinality_violation (missing summary-marks)**
+- [x] **Step 7: 422 cardinality_violation (missing summary-marks)**
 
 ```bash
 curl -sS -o /tmp/422card.json -w "HTTP=%{http_code}\n" -X POST \
@@ -3338,7 +3338,7 @@ cat /tmp/422card.json
 ```
 Expected: `HTTP=422`, error `cardinality_violation`, `details.field == "summary-marks"`.
 
-- [ ] **Step 8: 405 wrong method**
+- [x] **Step 8: 405 wrong method**
 
 ```bash
 curl -sS -o /tmp/405.json -w "HTTP=%{http_code}\n" -X PUT \
@@ -3347,7 +3347,7 @@ cat /tmp/405.json
 ```
 Expected: `HTTP=405`, error `method_not_allowed`.
 
-- [ ] **Step 9: 422 invalid path param (whitespace)**
+- [x] **Step 9: 422 invalid path param (whitespace)**
 
 ```bash
 curl -sS -o /tmp/422path.json -w "HTTP=%{http_code}\n" "http://localhost:4567/results/%20%20/aggregate"
@@ -3355,7 +3355,7 @@ cat /tmp/422path.json
 ```
 Expected: `HTTP=422`, error `invalid_path_param`.
 
-- [ ] **Step 10: 404 unknown route**
+- [x] **Step 10: 404 unknown route**
 
 ```bash
 curl -sS -o /tmp/404u.json -w "HTTP=%{http_code}\n" http://localhost:4567/nope
@@ -3363,14 +3363,14 @@ cat /tmp/404u.json
 ```
 Expected: `HTTP=404`, `details.reason == "unknown_route"`.
 
-- [ ] **Step 11: 404 aggregate-no-rows (vs 404 unknown route — distinguishable by `details.reason`)**
+- [x] **Step 11: 404 aggregate-no-rows (vs 404 unknown route — distinguishable by `details.reason`)**
 
 ```bash
 curl -sS http://localhost:4567/results/NEVERSEEN/aggregate
 ```
 Expected: 404, `details.reason == "no_matching_rows"`.
 
-- [ ] **Step 12: Tear down + commit**
+- [x] **Step 12: Tear down + commit**
 
 ```bash
 docker compose down
