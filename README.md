@@ -28,6 +28,12 @@ GET aggregate stats:
 curl -sS http://localhost:4567/results/1234/aggregate
 ```
 
+Expected shape for the example above:
+
+```json
+{"mean":65.0,"stddev":0.0,"min":65.0,"max":65.0,"p25":65.0,"p50":65.0,"p75":65.0,"count":1}
+```
+
 ## Assumptions
 
 Safe because the import contract treats each request as the atomic unit.
