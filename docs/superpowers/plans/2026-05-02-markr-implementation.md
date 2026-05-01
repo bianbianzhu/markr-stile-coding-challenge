@@ -2522,7 +2522,7 @@ git commit -m "feat: Repository with chunked UPSERT + PERCENTILE_CONT aggregate 
 - Create: `src/markr/api/content_type.py`
 - Create: `tests/test_content_type.py`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_content_type.py
@@ -2548,7 +2548,7 @@ def test_rejected(ct):
     assert ei.value.error == "unsupported_media_type"
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/api/content_type.py
@@ -2569,7 +2569,7 @@ def require_markr_xml(content_type: str | None) -> None:
         )
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_content_type.py -v
