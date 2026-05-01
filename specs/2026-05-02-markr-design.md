@@ -88,6 +88,8 @@ Single service (Level 1 logical decoupling) chosen over two services. Stateless 
 | Tests | pytest + pytest-asyncio + httpx `AsyncClient` + testcontainers-python (Postgres) |
 | Package manager | **uv** + `pyproject.toml` + `uv.lock` (no pip / poetry / pipenv) |
 
+**Version constraints**: declared in `pyproject.toml` with floors that match the spec's behavioural assumptions (notably `pydantic>=2` because §8.4 relies on Pydantic v2 declaration-order serialization; `fastapi>=0.110`; `sqlalchemy>=2.0`). Exact transitive resolution is pinned in `uv.lock`, which is committed to the repo. The spec deliberately does not enumerate full version ranges — that's the lockfile's job.
+
 ### 3.1 mypy backpressure preconditions
 
 mypy strict only catches bugs when type information actually flows. Library boundaries that return `Any` defeat the entire chain. The implementation MUST establish two typed boundaries:
@@ -216,7 +218,7 @@ Any failure before `COMMIT` results in `ROLLBACK` and a 4xx response with no row
 ct = request.headers.get("content-type", "")
 media_type = ct.split(";", 1)[0].strip().lower()
 if media_type != "text/xml+markr":
-    raise HTTPException(status_code=415, ...)
+    raise MarkrHTTPException(415, "unsupported_media_type", "expected text/xml+markr")
 ```
 
 Exact media-type match; parameters tolerated. Rejects `text/xml`, `application/xml`, `text/xml+markr-bad`, etc.
@@ -228,7 +230,9 @@ Two-layer enforcement, implemented as a **pure ASGI middleware** wrapping the `r
 - Trust `Content-Length` header for early rejection if `> 10,485,760`.
 - Stream the body via the wrapped `receive`; maintain a running byte counter across `http.request` events; abort with 413 once the counter exceeds `10,485,760` (defends against missing or lying `Content-Length`).
 
-Implementation note: do **NOT** use Starlette's `BaseHTTPMiddleware` for this. `BaseHTTPMiddleware` buffers the entire body before yielding control downstream, defeating the abort-before-buffer goal. A pure ASGI middleware (a callable taking `scope, receive, send`) wrapping `receive` is required.
+Implementation notes:
+- Do **NOT** use Starlette's `BaseHTTPMiddleware` — it buffers the entire body before yielding control downstream, defeating the abort-before-buffer goal. Use a pure ASGI middleware (a callable taking `scope, receive, send`) wrapping `receive`.
+- The wrapped `receive` MUST forward `http.disconnect` events unchanged so the downstream ASGI app can clean up; only `http.request` chunks are gated by the byte counter.
 
 The 10 MiB value is `10 * 1024 * 1024 = 10,485,760` bytes. The journal (Round 5.5) used "10 MB" informally; this spec defines it precisely as 10 MiB. Error messages and README use "10 MiB" for clarity.
 
@@ -248,7 +252,7 @@ Parse failure (including empty body and whitespace-only body) → 400 `malformed
 
 ```python
 if root.tag != "mcq-test-results":
-    raise HTTPException(status_code=422, ...)
+    raise MarkrHTTPException(422, "wrong_root", f"unexpected root element: {root.tag!r}")
 ```
 
 Literal string equality. Namespaced roots (e.g. `{http://example.com/mcq}mcq-test-results`) fail this check and are rejected. **No XML namespace support**: the explicit policy here prevents future contributors from accidentally adding namespace-stripping helpers that would diverge behaviour.
@@ -258,9 +262,11 @@ Literal string equality. Namespaced roots (e.g. `{http://example.com/mcq}mcq-tes
 ```python
 records = root.findall("mcq-test-result")
 if len(records) > 10_000:
-    raise HTTPException(status_code=413, ...)  # record_count_exceeded
+    raise MarkrHTTPException(413, "record_count_exceeded",
+                              f"batch contains {len(records)} records (limit 10000)",
+                              {"count": len(records), "limit": 10_000})
 if len(records) == 0:
-    raise HTTPException(status_code=422, ...)  # empty_batch
+    raise MarkrHTTPException(422, "empty_batch", "document contains zero records")
 ```
 
 `> 10000` rejects; exactly 10000 is allowed. Zero records → 422 `empty_batch` (see §7.4); silent no-op accept would surprise operators and contradict the "missing important bits" spirit.
@@ -273,10 +279,10 @@ First failure short-circuits and rejects the entire batch. Brief does not ask fo
 
 **Dedup (in-memory)**
 
-For each `(test_id, student_number)` key, reduce all observed records into one entry:
+For each `(test_id, student_number)` key, reduce all observed records into one entry. Iteration order is **XML document order** (top to bottom).
 - `marks_obtained` = `max(obtained_seen)` (highest score wins, per brief)
 - `marks_available` = `max(available_seen)` (highest available wins, per brief)
-- `first_name`, `last_name`, `scanned_on` = **last non-null seen** (later record overrides earlier; `None` does not overwrite a prior real value)
+- `first_name`, `last_name`, `scanned_on` = **last non-null seen in document order** (later record overrides earlier; `None` / empty does not overwrite a prior real value)
 
 Concrete reduction example. Three duplicates for `(test=X, student=001)`:
 
@@ -335,15 +341,27 @@ Root element: `<mcq-test-results>`. Each record: `<mcq-test-result scanned-on=".
 | `student-number` | child element text | exactly 1 | yes | trim whitespace; reject empty after trim; max 256 chars |
 | `test-id` | child element text | exactly 1 | yes | trim whitespace; reject empty after trim; max 256 chars |
 | `summary-marks` | child element with `available` and `obtained` attributes | exactly 1 | yes | see §6.3 |
-| `first-name` | child element text | 0 or 1 | no | tolerated; stored if present |
-| `last-name` | child element text | 0 or 1 | no | tolerated; stored if present |
-| `scanned-on` | attribute on `<mcq-test-result>` | 0 or 1 | no | best-effort `datetime.fromisoformat`; NULL on parse failure (no rejection) |
+| `first-name` | child element text | 0 or more | no | tolerated; **last-seen non-empty value wins** (mirrors §5.4 dedup rule); empty element `<first-name></first-name>` stored as `NULL`, not `""` |
+| `last-name` | child element text | 0 or more | no | same rule as `first-name` |
+| `scanned-on` | attribute on `<mcq-test-result>` | 0 or 1 | no | parsed via `datetime.fromisoformat(value)` (Python 3.11+ accepts the trailing `Z`); on `ValueError` store NULL, do not reject the batch |
 | `<answer>` | child elements | any | ignored | per brief; not parsed, not stored |
 | Any other element | — | any | ignored | per brief: "extra fields … shouldn't concern you" |
 
-**Cardinality rule**: every required field must appear *exactly once* per record. Multiples (e.g. two `<student-number>` elements in one record) → 422 `cardinality_violation`.
+**Cardinality rule (required fields)**: every required field must appear *exactly once* per record. `0` or `>1` occurrences → 422 `cardinality_violation` with `details: {"field": "<name>", "count": <n>}`.
 
-**Whitespace rule**: trim leading/trailing whitespace from required text fields and required attribute values before validation/parsing. This is consistent across all required fields.
+**Cardinality rule (optional fields)**: optional fields tolerate `0..*` occurrences. When more than one is present, last-seen-non-empty wins (matches §5.4's intra-batch dedup rule for optional fields).
+
+**Whitespace rule**: trim leading/trailing whitespace from required text fields **and** required attribute values (`available`, `obtained`) before validation/parsing. Required text field empty after trim → 422 `invalid_field_value`.
+
+**Empty-element rule**: an empty optional child element such as `<first-name></first-name>` stores as `NULL`, not as `""`. This keeps the `COALESCE` in the UPSERT semantically correct (empty cannot overwrite an earlier non-empty value).
+
+**Per-record validation precedence** (deterministic order, applied to each record before short-circuit in §9.3):
+
+1. `cardinality_violation` — required field count check (every required field present exactly once)
+2. `invalid_field_value` — required text field empty after trim
+3. `invalid_score` — `available`/`obtained` not parseable as `int`, then `available > 0`, `obtained >= 0`, `obtained <= available`
+
+The first failing rule for the first failing record short-circuits the batch (§9.3). Pinning this order ensures the same input produces the same `error` code regardless of who implements the validator.
 
 ### 6.3 `summary-marks` numeric parsing
 
@@ -396,7 +414,19 @@ CREATE TABLE IF NOT EXISTS test_results (
 
 ### 7.3 Bootstrap
 
-`schema.sql` is loaded and executed during FastAPI lifespan startup (`engine.begin()` block). `CREATE TABLE IF NOT EXISTS` is idempotent; concurrent worker startup is safe (Postgres serialises via `AccessExclusiveLock`). No Alembic for the prototype; future migrations are listed in §13.
+`schema.sql` is loaded and executed during FastAPI lifespan startup. `CREATE TABLE IF NOT EXISTS` is **idempotent at the catalog level but not race-safe**: under `uvicorn --workers 2`, both worker processes run lifespan concurrently, and PG's `IF NOT EXISTS` performs the existence check before acquiring the AccessExclusiveLock that would serialise creation. The race window is small but real, and concurrent workers against an empty DB can produce a `duplicate_table` (42P07) error in one of them ([PG mailing list reference, T. Lane](https://www.postgresql.org/message-id/22700.1539093909%40sss.pgh.pa.us)).
+
+**Bootstrap MUST run inside a Postgres advisory-lock-protected transaction** to serialise concurrent worker startup:
+
+```python
+SCHEMA_LOCK_KEY = 0x4D41524B  # arbitrary 32-bit constant; "MARK" in ASCII
+
+async with write_engine.begin() as conn:
+    await conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": SCHEMA_LOCK_KEY})
+    await conn.execute(text(schema_sql))
+```
+
+`pg_advisory_xact_lock` blocks the second worker until the first commits. After commit, the lock is auto-released, and the second worker's `CREATE TABLE IF NOT EXISTS` no-ops cleanly because the table now exists. No Alembic for the prototype; future migrations are listed in §13.
 
 ### 7.4 Empty batch
 
@@ -414,10 +444,14 @@ This is a spec-level extension to the journal's Round 7.6 error policy table, wh
 @router.get("/results/{test_id}/aggregate")
 async def aggregate(
     test_id: Annotated[str, Path(min_length=1, max_length=256)],
-) -> AggregateResponse: ...
+) -> AggregateResponse:
+    test_id = test_id.strip()
+    if not test_id:
+        raise MarkrHTTPException(422, "invalid_path_param", "test_id is empty after trim", {"field": "test_id"})
+    ...
 ```
 
-`min_length=1` is technically redundant (FastAPI route-matching rejects empty path segments) but documents the contract explicitly. Path parameter failing validation → 422 (FastAPI default).
+`min_length=1` is technically redundant (FastAPI route-matching rejects empty path segments) but documents the contract explicitly. The explicit `.strip()` + empty-after-trim check ensures **symmetry with ingest** (§6.2 trims and rejects empty `test-id`); without it, a URL-encoded whitespace `test_id="%20%20"` would pass FastAPI's length validator and 404 on lookup, contradicting the rejection that an identical value would receive at ingest.
 
 ### 8.2 Aggregation interpretation
 
@@ -499,7 +533,7 @@ All non-2xx responses return JSON:
 |---|---|---|
 | 400 | `malformed_xml` | XML parse failure (including empty / whitespace-only body) |
 | 404 | `not_found` | GET aggregate with zero matching rows |
-| 405 | `method_not_allowed` | Wrong HTTP method on `/import` (e.g. GET, PUT). Default FastAPI body is overridden by global handler — see §9.4 |
+| 405 | `method_not_allowed` | Wrong HTTP method on any route (e.g. PUT on `/import`, POST on `/results/.../aggregate`). FastAPI's auto-generated 405 is converted to envelope by the global handler in §9.5 |
 | 413 | `body_too_large` | Request body exceeds 10 MiB |
 | 413 | `record_count_exceeded` | More than 10,000 `<mcq-test-result>` rows |
 | 415 | `unsupported_media_type` | `Content-Type` is not `text/xml+markr` |
@@ -507,8 +541,10 @@ All non-2xx responses return JSON:
 | 422 | `empty_batch` | Zero records inside `<mcq-test-results>` |
 | 422 | `cardinality_violation` | Required field appears `0` or `>1` times in a record. `details: {"field": "<name>", "count": <n>}` so consumers can distinguish missing-vs-duplicate without separate codes |
 | 422 | `invalid_score` | Non-integer, negative, `available <= 0`, or `obtained > available` |
-| 422 | `invalid_path_param` | GET aggregate `test_id` fails Path validation (length / format) |
+| 422 | `invalid_path_param` | GET aggregate `test_id` fails Path validation (length / format / empty after trim) |
 | 422 | `invalid_field_value` | Required text field empty after trim, or other field-level format failure |
+| 500 | `internal_error` | Unhandled exception. Body never includes stack trace |
+| 503 | `service_unavailable` | `/health` cannot reach the database during readiness probe |
 
 `413` for the record-count cap is a deliberate operational-cap choice (rather than 422) so both "input is too large" backstops live in the same status family. 422 would also be defensible.
 
@@ -516,16 +552,50 @@ All non-2xx responses return JSON:
 
 For batch validation, the first failing record (in document order) short-circuits with that record's error code. The brief does not request a batch-wide failure report, and the manual-entry workflow operates on the printed source document.
 
-### 9.4 Uniform error envelope enforcement
+### 9.4 `MarkrHTTPException` — error code carrier
 
-FastAPI's default exception responses (e.g. `405 Method Not Allowed`, `422` from Path/Query parameter validation, generic `500`) do not match §9.1's envelope. Without intervention they would emit `{"detail": "..."}` instead of `{"error", "message", "details"}`, contradicting §9.1.
+The `error` code in §9.1 cannot be inferred from HTTP status alone — §9.2 maps multiple `error` codes onto the same status (413 has 2; 422 has 6). The application MUST therefore raise a typed exception that carries the `error` code explicitly:
 
-The application MUST register global exception handlers that convert:
-- Starlette `HTTPException` (covers FastAPI's `HTTPException` and the auto-generated 405) → §9.1 envelope, mapping `detail` → `message` and inferring `error` code by status (table in §9.2).
-- FastAPI `RequestValidationError` (auto-generated 422 from Path/Query/Body validators) → `{error: "invalid_path_param", message: "...", details: {<field>: [...]}}`.
-- Unhandled `Exception` → 500 `{error: "internal_error", message: "internal server error"}` (no stack-trace leak).
+```python
+class MarkrHTTPException(HTTPException):
+    def __init__(
+        self,
+        status_code: int,
+        error: str,
+        message: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=message)
+        self.error = error
+        self.message = message
+        self.details = details or {}
+```
 
-After this, every non-2xx response in the system uses the §9.1 envelope.
+Every raise-site in `src/markr/` (ingestion pipeline §5.4, validators §6, aggregate §8.1, health §10.1) MUST use `MarkrHTTPException` rather than plain `HTTPException`. Example:
+
+```python
+raise MarkrHTTPException(
+    status_code=422,
+    error="cardinality_violation",
+    message="required field appeared more than once",
+    details={"field": "summary-marks", "count": 2},
+)
+```
+
+This satisfies §3.1's typed-boundary mandate (the `error` field is a typed `str`, not a `dict[str, Any]` payload that could silently lose shape).
+
+### 9.5 Global exception handlers
+
+Three handlers are registered on the FastAPI app to ensure every non-2xx response conforms to the §9.1 envelope:
+
+1. **`MarkrHTTPException`** → read `exc.error`, `exc.message`, `exc.details` directly; emit envelope at `exc.status_code`.
+2. **`StarletteHTTPException`** (catches FastAPI's auto-generated 405 on wrong-method, plus any plain `HTTPException` slipping through) → map status to a default `error` code:
+   - `405 → method_not_allowed`
+   - other statuses → `internal_error` (logged as a programming bug — every spec'd raise-site should have used `MarkrHTTPException`).
+3. **`RequestValidationError`** (FastAPI's auto-generated 422 from Path/Query/Body validators — fired e.g. when `test_id` exceeds 256 chars before our `.strip()` runs) → emit `{error: "invalid_path_param", message: "request validation failed", details: {<field>: [...]}}`.
+4. **`Exception`** (catch-all) → 500 `{error: "internal_error", message: "internal server error"}`. Stack trace is logged server-side only.
+
+After these four handlers, every non-2xx response in the system uses the §9.1 envelope.
 
 ---
 
@@ -540,11 +610,22 @@ async def health() -> dict[str, str]:
         async with read_engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return {"status": "ok"}
-    except Exception:
-        raise HTTPException(status_code=503, detail={"status": "degraded"})
+    except Exception as exc:
+        raise MarkrHTTPException(
+            status_code=503,
+            error="service_unavailable",
+            message="database unreachable",
+            details={"status": "degraded"},
+        ) from exc
 ```
 
-Used by the docker-compose healthcheck. Not a product endpoint.
+Success response is `200 {"status": "ok"}`. Failure response, after the §9.5 handler converts the `MarkrHTTPException`, is the standard envelope:
+
+```json
+{"error": "service_unavailable", "message": "database unreachable", "details": {"status": "degraded"}}
+```
+
+Used by the docker-compose healthcheck. Not a product endpoint (per §1.1).
 
 ### 10.2 Logging
 
@@ -560,7 +641,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 On startup:
 1. Build `write_engine` and `read_engine` from `DATABASE_URL`.
 2. Retry `SELECT 1` against `write_engine` with exponential backoff up to ~30s; if still failing, raise so docker-compose restarts the container.
-3. Read `db/schema.sql` and execute via `write_engine.begin()` (DDL belongs to the write side).
+3. Read `db/schema.sql` and execute it inside an advisory-lock-protected transaction on `write_engine` per §7.3 (DDL belongs to the write side; advisory lock prevents the multi-worker race).
 4. Yield to FastAPI.
 
 On shutdown:
@@ -580,7 +661,7 @@ On shutdown:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | (required) | `postgresql+asyncpg://markr:markr@db:5432/markr` |
+| `DATABASE_URL` | _no default; required at process start_ | SQLAlchemy URL for both engines. The compose file (§12.3) injects `postgresql+asyncpg://markr:markr@db:5432/markr` as the value; the application has no fallback so a missing env var fails fast. |
 | `LOG_LEVEL` | `INFO` | stdlib logging level (case-insensitive) |
 | `WRITE_POOL_SIZE` | `10` | write_engine `pool_size` |
 | `WRITE_POOL_OVERFLOW` | `20` | write_engine `max_overflow` |
@@ -738,7 +819,7 @@ The brief requires a README covering: assumptions and why; what's included and w
 
 1. **Quick start** — `docker compose up --build`, then the brief's `curl` example for POST and GET. One-page success path.
 2. **Assumptions** — copy from §14, prefixed with one line each on *why* the assumption is safe.
-3. **Decisions & trade-offs** — short prose for each material decision: single-service vs two-service; synchronous vs fire-and-forget; DOM vs streaming; trust `<summary-marks>`; intra-request dedup in app code.
+3. **Decisions & trade-offs** — short prose for each material decision: single-service vs two-service; synchronous vs fire-and-forget; DOM vs streaming; trust `<summary-marks>`; intra-request dedup in app code; **empty batch returns 422 `empty_batch`** (brief is silent on zero-records; we reject loudly rather than 200 silently — see §7.4); **no application-layer rounding on aggregate stats** (§8.5).
 4. **Excluded (deliberately)** — copy from §13.1.
 5. **Real-time dashboards (write-up only)** — ≤200 words. ASCII flow: `POST /import → COMMIT → outbox publisher → consumer → Redis pre-aggregated cache → SSE → dashboard`. State explicitly that `/aggregate` remains the canonical answer.
 6. **Future work** — copy from §13.2.
