@@ -3379,6 +3379,8 @@ git commit --allow-empty -m "test(e2e): negative-path envelope matrix (spec §9.
 
 **Acceptance criteria:** every step's status code and `error` value matches spec §9.2.
 
+**Executable evidence:** rerun with `scripts/e2e_negative_matrix.sh` against a running stack. Latest successful output is recorded in `docs/superpowers/e2e/negative-matrix-latest.md`. The script generates a real >10 MiB temporary body for the wrong-content-type ordering check.
+
 ---
 
 ### Task 11.4: Sample fixture round-trip integration test
@@ -3507,6 +3509,8 @@ git commit --allow-empty -m "test(e2e): replay idempotency after restart verifie
 ```
 
 **Acceptance criteria:** Step 4 prints `OK: idempotent`. Distinct (test_id, student_number) row count is unchanged after replay.
+
+**Executable evidence:** rerun with `scripts/e2e_replay_restart.sh` against a running stack. Latest successful output is recorded in `docs/superpowers/e2e/replay-restart-latest.md`.
 
 ---
 
