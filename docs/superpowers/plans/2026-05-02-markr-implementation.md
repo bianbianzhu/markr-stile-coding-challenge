@@ -956,7 +956,7 @@ git commit -m "feat: pure-ASGI ingest preflight (CT 415 → body cap 413) per sp
 **Files:**
 - Create: `src/markr/db/schema.sql`
 
-- [ ] **Step 1: Write schema**
+- [x] **Step 1: Write schema**
 
 ```sql
 -- src/markr/db/schema.sql
@@ -973,7 +973,7 @@ CREATE TABLE IF NOT EXISTS test_results (
 );
 ```
 
-- [ ] **Step 2: Add `force-include` to ship `schema.sql` in the wheel**
+- [x] **Step 2: Add `force-include` to ship `schema.sql` in the wheel**
 
 Append to `pyproject.toml`:
 
@@ -991,7 +991,7 @@ uv run python -c "from importlib.resources import files; print(files('markr.db')
 
 The print should resolve to the venv-installed path (or editable source path), not raise.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/markr/db/schema.sql pyproject.toml uv.lock
