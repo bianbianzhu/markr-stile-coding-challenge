@@ -86,14 +86,14 @@ Single service (Level 1 logical decoupling) chosen over two services. Stateless 
 | Lint/format | ruff |
 | Type check | mypy strict on `src/markr/` |
 | Tests | pytest + pytest-asyncio + httpx `AsyncClient` + testcontainers-python (Postgres) |
-| Package manager | pip + `pyproject.toml` |
+| Package manager | **uv** + `pyproject.toml` + `uv.lock` (no pip / poetry / pipenv) |
 
 ### 3.1 mypy backpressure preconditions
 
 mypy strict only catches bugs when type information actually flows. Library boundaries that return `Any` defeat the entire chain. The implementation MUST establish two typed boundaries:
 
 1. **XML parse boundary** — wrap `defusedxml.ElementTree.fromstring` in a thin function annotated to return stdlib `xml.etree.ElementTree.Element`. After this single shim, all downstream `.find()` / `.get()` calls are typed by stdlib stubs.
-2. **Repository boundary** — Repository functions return typed dataclasses (or Pydantic models), never raw `Result.Row` or `dict[str, Any]`. Without this, SQLAlchemy `Result` rows degrade to `Any` and silently swallow column-level type bugs (e.g. a missing `COALESCE` on `STDDEV_POP` becoming `None` at runtime).
+2. **Repository boundary** — Repository functions return typed dataclasses (or Pydantic models), never raw `Result.Row` or `dict[str, Any]`. Without this, SQLAlchemy `Result` rows degrade to `Any` and silently swallow column-level type bugs (e.g. a missing `COALESCE` on `STDDEV_POP` becoming `None` at runtime). The Repository's stat fields MUST be typed as `float` (non-optional) — this forces the Repository to handle any nullable SQL result (via `COALESCE` in SQL or explicit branching in Python) before constructing the typed model. If the field were `float | None`, the type system would let `None` propagate to the response and violate the contract.
 
 ### 3.2 Tooling configuration
 
@@ -112,11 +112,12 @@ module = ["defusedxml.*", "testcontainers.*"]
 ignore_missing_imports = true
 ```
 
-Commands:
-- `ruff check .`
-- `ruff format --check .`
-- `mypy src/markr`
-- `pytest`
+Commands (all via `uv run` so the project venv is used automatically):
+- `uv sync` — install/refresh deps from `uv.lock`
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src/markr`
+- `uv run pytest`
 
 ---
 
@@ -128,6 +129,7 @@ markr/
 ├── Dockerfile
 ├── .dockerignore
 ├── pyproject.toml
+├── uv.lock
 ├── README.md
 ├── specs/
 │   └── 2026-05-02-markr-design.md
@@ -221,9 +223,12 @@ Exact media-type match; parameters tolerated. Rejects `text/xml`, `application/x
 
 **Body cap (413)**
 
-Two-layer enforcement:
+Two-layer enforcement, implemented as a **pure ASGI middleware** wrapping the `receive` callable:
+
 - Trust `Content-Length` header for early rejection if `> 10,485,760`.
-- Stream the body with a byte counter; abort and 413 if the running total exceeds `10,485,760` (defends against missing or lying `Content-Length`).
+- Stream the body via the wrapped `receive`; maintain a running byte counter across `http.request` events; abort with 413 once the counter exceeds `10,485,760` (defends against missing or lying `Content-Length`).
+
+Implementation note: do **NOT** use Starlette's `BaseHTTPMiddleware` for this. `BaseHTTPMiddleware` buffers the entire body before yielding control downstream, defeating the abort-before-buffer goal. A pure ASGI middleware (a callable taking `scope, receive, send`) wrapping `receive` is required.
 
 The 10 MiB value is `10 * 1024 * 1024 = 10,485,760` bytes. The journal (Round 5.5) used "10 MB" informally; this spec defines it precisely as 10 MiB. Error messages and README use "10 MiB" for clarity.
 
@@ -268,11 +273,24 @@ First failure short-circuits and rejects the entire batch. Brief does not ask fo
 
 **Dedup (in-memory)**
 
-```python
-{(test_id, student_number): (max(obtained_seen), max(available_seen), other_fields_from_last_seen)}
-```
+For each `(test_id, student_number)` key, reduce all observed records into one entry:
+- `marks_obtained` = `max(obtained_seen)` (highest score wins, per brief)
+- `marks_available` = `max(available_seen)` (highest available wins, per brief)
+- `first_name`, `last_name`, `scanned_on` = **last non-null seen** (later record overrides earlier; `None` does not overwrite a prior real value)
 
-Required because Postgres `ON CONFLICT DO UPDATE` rejects multiple rows with the same conflict key in one INSERT. Cross-request dedup remains in DB via `GREATEST`.
+Concrete reduction example. Three duplicates for `(test=X, student=001)`:
+
+| Input record | `obtained` | `available` | `first_name` | `last_name` | `scanned_on` |
+|---|---|---|---|---|---|
+| 1st | 10 | 20 | "Jane" | "Austen" | 2017-01-01 |
+| 2nd | 15 | 20 | None | "Austen" | 2017-01-02 |
+| 3rd | 13 | 20 | "Janet" | None | 2017-01-03 |
+
+Reduced entry passed to UPSERT: `obtained=15, available=20, first_name="Janet", last_name="Austen", scanned_on=2017-01-03`.
+
+Rationale: the "last non-null" rule mirrors the brief's intent (later scans correct earlier scans) while the SQL `COALESCE` in the UPSERT (§ below) prevents NULL from clobbering existing DB rows on cross-request merges. Both layers must agree to avoid silent loss of optional fields.
+
+Dedup is required because Postgres `ON CONFLICT DO UPDATE` rejects multiple rows with the same conflict key in one INSERT. Cross-request dedup remains in DB via `GREATEST` and `COALESCE`.
 
 **Transaction + chunked UPSERT**
 
@@ -314,8 +332,8 @@ Root element: `<mcq-test-results>`. Each record: `<mcq-test-result scanned-on=".
 
 | Field | XML location | Cardinality | Required? | Notes |
 |---|---|---|---|---|
-| `student-number` | child element text | exactly 1 | yes | trim whitespace; reject empty after trim; max 64 chars |
-| `test-id` | child element text | exactly 1 | yes | trim whitespace; reject empty after trim; max 64 chars |
+| `student-number` | child element text | exactly 1 | yes | trim whitespace; reject empty after trim; max 256 chars |
+| `test-id` | child element text | exactly 1 | yes | trim whitespace; reject empty after trim; max 256 chars |
 | `summary-marks` | child element with `available` and `obtained` attributes | exactly 1 | yes | see §6.3 |
 | `first-name` | child element text | 0 or 1 | no | tolerated; stored if present |
 | `last-name` | child element text | 0 or 1 | no | tolerated; stored if present |
@@ -384,6 +402,8 @@ CREATE TABLE IF NOT EXISTS test_results (
 
 Zero `<mcq-test-result>` children inside `<mcq-test-results>` → 422 `empty_batch`. Silent no-op accept would surprise operators and contradicts the spirit of "missing important bits".
 
+This is a spec-level extension to the journal's Round 7.6 error policy table, which did not enumerate the zero-records case. The choice is intentional: silently 200-ing on empty input would mask scanner / network bugs.
+
 ---
 
 ## 8. GET /results/{test_id}/aggregate — aggregation
@@ -393,13 +413,19 @@ Zero `<mcq-test-result>` children inside `<mcq-test-results>` → 422 `empty_bat
 ```python
 @router.get("/results/{test_id}/aggregate")
 async def aggregate(
-    test_id: Annotated[str, Path(min_length=1, max_length=64)],
+    test_id: Annotated[str, Path(min_length=1, max_length=256)],
 ) -> AggregateResponse: ...
 ```
 
 `min_length=1` is technically redundant (FastAPI route-matching rejects empty path segments) but documents the contract explicitly. Path parameter failing validation → 422 (FastAPI default).
 
-### 8.2 Query
+### 8.2 Aggregation interpretation
+
+`mean` is computed as `AVG(per-student percentage)` — the unweighted mean of one row per `(test_id, student_number)` after dedup. Each student contributes one data point regardless of how many times their paper was scanned. This is the natural reading of *"the mean of the awarded marks … expressed as percentages"*; the alternative (`SUM(obtained) / SUM(available) * 100`, weighted by per-student `available`) would give a different number when `available` differs across students for the same test. The brief's single-record example does not disambiguate the two readings; per-student average is chosen for clarity and reproducibility.
+
+`stddev`, `min`, `max`, `p25`, `p50`, `p75` are likewise computed across the per-student percentages.
+
+### 8.3 Query
 
 ```sql
 SELECT
@@ -418,7 +444,7 @@ FROM (
 ) t;
 ```
 
-### 8.3 Response shape
+### 8.4 Response shape
 
 `count == 0` → 404 `not_found`. Never serve an empty `count: 0` shell — that would lie about an aggregate that does not exist.
 
@@ -439,7 +465,7 @@ FROM (
 
 Field order is enforced via Pydantic v2 model declaration order. Hidden test suites that string-match responses depend on this order; JSON's "unordered object" formal stance is irrelevant in practice.
 
-### 8.4 Numeric precision
+### 8.5 Numeric precision
 
 The brief specifies neither precision nor rounding mode. Stats are returned as Postgres-computed double-precision floats with **no application-layer rounding**. Introducing a rounding rule would be arbitrary and risks failing hidden tests with different precision expectations.
 
@@ -447,7 +473,7 @@ The brief example value `65.0` arises naturally from `13/20*100` in IEEE 754 dou
 
 `STDDEV_POP` (population stddev) is used so single-row aggregates return `0.0` instead of `NULL`, matching the brief example. `COALESCE(..., 0)` is a defence in depth.
 
-### 8.5 Test strategy for floats
+### 8.6 Test strategy for floats
 
 Assertions on `mean`, `stddev`, `min`, `max`, `p25`, `p50`, `p75` use approximate comparison (`pytest.approx`, default tolerance `rel=1e-6`). Exact equality is asserted only on `count` (int) and on the single-row `count=1` case where the value coincides with the input percentage.
 
@@ -473,14 +499,13 @@ All non-2xx responses return JSON:
 |---|---|---|
 | 400 | `malformed_xml` | XML parse failure (including empty / whitespace-only body) |
 | 404 | `not_found` | GET aggregate with zero matching rows |
-| 405 | (FastAPI default body) | Wrong HTTP method on `/import` |
+| 405 | `method_not_allowed` | Wrong HTTP method on `/import` (e.g. GET, PUT). Default FastAPI body is overridden by global handler — see §9.4 |
 | 413 | `body_too_large` | Request body exceeds 10 MiB |
 | 413 | `record_count_exceeded` | More than 10,000 `<mcq-test-result>` rows |
 | 415 | `unsupported_media_type` | `Content-Type` is not `text/xml+markr` |
 | 422 | `wrong_root` | XML well-formed but root element is not `<mcq-test-results>` (covers namespaced roots) |
 | 422 | `empty_batch` | Zero records inside `<mcq-test-results>` |
-| 422 | `cardinality_violation` | Required field appears 0 times or >1 times in a record |
-| 422 | `missing_field` | Required field absent (degenerate case of cardinality_violation = 0; reported separately for clarity) |
+| 422 | `cardinality_violation` | Required field appears `0` or `>1` times in a record. `details: {"field": "<name>", "count": <n>}` so consumers can distinguish missing-vs-duplicate without separate codes |
 | 422 | `invalid_score` | Non-integer, negative, `available <= 0`, or `obtained > available` |
 | 422 | `invalid_path_param` | GET aggregate `test_id` fails Path validation (length / format) |
 | 422 | `invalid_field_value` | Required text field empty after trim, or other field-level format failure |
@@ -489,7 +514,18 @@ All non-2xx responses return JSON:
 
 ### 9.3 First-error short-circuit
 
-For batch validation, the first failing record short-circuits with that record's error code. The brief does not request a batch-wide failure report, and the manual-entry workflow operates on the printed source document.
+For batch validation, the first failing record (in document order) short-circuits with that record's error code. The brief does not request a batch-wide failure report, and the manual-entry workflow operates on the printed source document.
+
+### 9.4 Uniform error envelope enforcement
+
+FastAPI's default exception responses (e.g. `405 Method Not Allowed`, `422` from Path/Query parameter validation, generic `500`) do not match §9.1's envelope. Without intervention they would emit `{"detail": "..."}` instead of `{"error", "message", "details"}`, contradicting §9.1.
+
+The application MUST register global exception handlers that convert:
+- Starlette `HTTPException` (covers FastAPI's `HTTPException` and the auto-generated 405) → §9.1 envelope, mapping `detail` → `message` and inferring `error` code by status (table in §9.2).
+- FastAPI `RequestValidationError` (auto-generated 422 from Path/Query/Body validators) → `{error: "invalid_path_param", message: "...", details: {<field>: [...]}}`.
+- Unhandled `Exception` → 500 `{error: "internal_error", message: "internal server error"}` (no stack-trace leak).
+
+After this, every non-2xx response in the system uses the §9.1 envelope.
 
 ---
 
@@ -524,7 +560,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 On startup:
 1. Build `write_engine` and `read_engine` from `DATABASE_URL`.
 2. Retry `SELECT 1` against `write_engine` with exponential backoff up to ~30s; if still failing, raise so docker-compose restarts the container.
-3. Read `db/schema.sql` and execute via `engine.begin()`.
+3. Read `db/schema.sql` and execute via `write_engine.begin()` (DDL belongs to the write side).
 4. Yield to FastAPI.
 
 On shutdown:
@@ -559,29 +595,38 @@ Tests honour `TEST_DATABASE_URL`; if absent, `conftest.py` starts a testcontaine
 
 ### 12.1 Dockerfile
 
-Simple multi-stage build. No Alpine (musl wheel pain with asyncpg / cryptography).
+Simple multi-stage build using `uv` (per CLAUDE.md mandate). No Alpine (musl wheel pain with asyncpg / cryptography).
 
 ```dockerfile
 # ── builder ──────────────────────────────────
 FROM python:3.12-slim AS builder
-ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+ENV UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /build
-COPY pyproject.toml ./
-RUN pip install .                       # deps cached separately from src
+
+# Layer 1: install deps only (cached unless pyproject.toml or uv.lock changes)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Layer 2: install the project itself (invalidated by src/ edits, but deps stay cached)
 COPY src/ ./src/
-RUN pip install --no-deps .             # install our own package
+RUN uv sync --frozen --no-dev
 
 # ── runtime ──────────────────────────────────
 FROM python:3.12-slim AS runtime
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH"
 COPY --from=builder /opt/venv /opt/venv
 EXPOSE 4567
 CMD ["uvicorn", "markr.main:app", "--host", "0.0.0.0", "--port", "4567", "--workers", "2"]
 ```
 
-Layer ordering: dependencies installed before source copy so business-code edits do not invalidate the dependency layer cache.
+Two-layer caching: `uv sync --no-install-project --no-dev` installs dependencies from the lock file without needing `src/` to exist (the bug a naive `pip install .` would hit). Editing business code only invalidates the second layer. Editing `pyproject.toml` / `uv.lock` invalidates both.
+
+`uv` itself is copied from the official image and lives only in the builder; the runtime image contains only the venv at `/opt/venv`. Runtime image size is dominated by Python base + venv, not by tooling.
 
 No non-root user, no Dockerfile `HEALTHCHECK`, no `tini`. Listed in §13.
 
@@ -656,7 +701,7 @@ App on port `4567` to match the brief's `curl` example.
 | Streaming XML parser | DOM is safe under 10 MiB cap; sidesteps element-order question |
 | 100% test coverage | brief explicitly de-prioritises |
 | Pub-sub / event queue between ingest and DB | incompatible with "reject the entire document" contract; no producer pressure to absorb |
-| Two services (L2) | journal Round 7 analysis: cost > benefit at this scope |
+| Two services (L2) | journal Round 7.4 analysis (post-Codex correction): cost > benefit at this scope |
 | Aggregate cache / materialised view | brief: "aggregation doesn't need to be fast" |
 | ORM declarative models | one table, no relationships, raw SQL is clearer for `PERCENTILE_CONT` / `GREATEST` |
 | Alembic migrations | one table, no schema evolution expected; `CREATE TABLE IF NOT EXISTS` is sufficient |
@@ -697,7 +742,7 @@ The brief requires a README covering: assumptions and why; what's included and w
 4. **Excluded (deliberately)** — copy from §13.1.
 5. **Real-time dashboards (write-up only)** — ≤200 words. ASCII flow: `POST /import → COMMIT → outbox publisher → consumer → Redis pre-aggregated cache → SSE → dashboard`. State explicitly that `/aggregate` remains the canonical answer.
 6. **Future work** — copy from §13.2.
-7. **Running tests** — `pytest` (testcontainers; needs Docker); fallback `TEST_DATABASE_URL=...`.
+7. **Running tests** — `uv sync && uv run pytest` (testcontainers; needs Docker); fallback `TEST_DATABASE_URL=postgresql+asyncpg://... uv run pytest`.
 
 Section 5 is required by the brief: *"it's probably worth having a think about that & writing a few things down even if the prototype implementation you build is a bit slow."* Skipping it violates the brief.
 
@@ -710,11 +755,12 @@ Section 5 is required by the brief: *"it's probably worth having a think about t
 | Run it | `docker compose up --build` |
 | Try POST | `curl -X POST -H 'Content-Type: text/xml+markr' http://localhost:4567/import -d @sample_results.xml` |
 | Try GET | `curl http://localhost:4567/results/9863/aggregate` |
-| Run tests | `pytest` (requires Docker for testcontainers) |
-| Tests against external DB | `TEST_DATABASE_URL=postgresql+asyncpg://... pytest` |
+| Install deps | `uv sync` |
+| Run tests | `uv run pytest` (requires Docker for testcontainers) |
+| Tests against external DB | `TEST_DATABASE_URL=postgresql+asyncpg://... uv run pytest` |
 | Wipe DB | `docker compose down -v` |
-| Lint | `ruff check . && ruff format --check .` |
-| Type-check | `mypy src/markr` |
+| Lint | `uv run ruff check . && uv run ruff format --check .` |
+| Type-check | `uv run mypy src/markr` |
 
 ---
 

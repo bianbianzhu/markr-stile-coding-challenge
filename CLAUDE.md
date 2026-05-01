@@ -2,4 +2,4 @@ Be concise, sacrifice the grammar for the sake of conciseness.
 
 EVERYTHING IN ENGLISH.
 
-chronological thinking journal 里，前面的 round 绝不能引用后面 round 的内容。 如果你想用后面的round 内容，那么把后面的round先移到前面来。
+Python tooling: use `uv` for dependency management, virtualenvs, and locking. Do not use `pip`, `poetry`, `pipenv`, `conda`, or `pip-tools`. Dockerfiles must install via `uv sync --frozen` from `pyproject.toml` + `uv.lock`. Local dev: `uv sync`, `uv run pytest`, `uv run ruff check .`, `uv run mypy src/markr`.
