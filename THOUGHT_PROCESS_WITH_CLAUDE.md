@@ -763,7 +763,9 @@ Three layers of defence:
 2. **Ambiguous commit + idempotent write**: HTTP cannot prove the caller received the 200 after commit, and a dropped connection during `COMMIT` leaves the caller unable to tell whether Postgres committed or rolled back. The brief specifies print-and-manual recovery for rejected documents, not automatic scanner retry. If the same document is submitted again after an ambiguous failure, `GREATEST` makes that replay safe: same XML twice converges to the same row.
 3. **Operational recovery**: if commit succeeds but the 200 is lost, the service cannot force the caller to know that. Server-side correctness comes from idempotent replay if the caller or operator submits the document again through the same `/import` path. If manual recovery writes to some other system, that is outside this service's guarantees.
 
-The in-memory batch worry is real for memory-pressure reasons, but not for crash-recovery reasons. They're separate concerns.
+The in-memory batch worry is real for memory-pressure reasons; Round 5.5's 10 MB / 10,000-record caps are the answer to that. This round is only about crash recovery: transaction boundary + idempotent replay keep the database from landing in a half-accepted state.
+
+The useful little surprise: the brief chose "highest score wins" for business reasons (folded paper, re-scan the sheet), but that same rule gives crash safety for free. If the same XML comes through twice after an ambiguous failure, `GREATEST` converges instead of double-counting.
 
 ---
 
