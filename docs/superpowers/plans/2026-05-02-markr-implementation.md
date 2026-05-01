@@ -1687,7 +1687,7 @@ git commit -m "build: docker-compose + .dockerignore per spec §12.2, §12.3"
 
 **Spec:** §10.1, §12.3
 
-- [ ] **Step 1: Bring up the stack**
+- [x] **Step 1: Bring up the stack**
 
 ```bash
 cd /Users/tianyili/Learn/ml/markr
@@ -1696,7 +1696,7 @@ docker compose up --build -d
 
 Wait until `docker compose ps` shows `app` healthy or at least running. Tail logs for ~10s to confirm lifespan completed: `docker compose logs app | tail -30`. Look for "Application startup complete."
 
-- [ ] **Step 2: curl health**
+- [x] **Step 2: curl health**
 
 ```bash
 curl -sS -o /tmp/markr_health.json -w "HTTP=%{http_code}\n" http://localhost:4567/health
@@ -1709,7 +1709,7 @@ HTTP=200
 {"status":"ok"}
 ```
 
-- [ ] **Step 3: curl unknown route → 404 envelope**
+- [x] **Step 3: curl unknown route → 404 envelope**
 
 ```bash
 curl -sS http://localhost:4567/nope | python -m json.tool
@@ -1720,7 +1720,7 @@ Expected JSON:
 {"error": "not_found", "message": "...", "details": {"reason": "unknown_route"}}
 ```
 
-- [ ] **Step 4: Verify table exists in DB**
+- [x] **Step 4: Verify table exists in DB**
 
 ```bash
 docker compose exec -T db psql -U markr -d markr -c "\\d test_results"
@@ -1728,13 +1728,13 @@ docker compose exec -T db psql -U markr -d markr -c "\\d test_results"
 
 Expected: shows `test_id`, `student_number`, `marks_available`, `marks_obtained`, `first_name`, `last_name`, `scanned_on` columns and the PK.
 
-- [ ] **Step 5: Tear down (keep volume — schema persists is fine)**
+- [x] **Step 5: Tear down (keep volume — schema persists is fine)**
 
 ```bash
 docker compose down
 ```
 
-- [ ] **Step 6: Commit confirmation note**
+- [x] **Step 6: Commit confirmation note**
 
 ```bash
 git commit --allow-empty -m "test(e2e): health + 404 envelope verified via curl"
