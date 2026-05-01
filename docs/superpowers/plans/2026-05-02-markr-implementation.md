@@ -69,7 +69,7 @@
 | §15 | README sections | T13.1 |
 | §17 | References | T13.1 |
 
-E2E gates: T6.5 (health), T9.4 (POST happy path), T10.3 (GET happy path + 404), T11.3 (negative-path matrix), T11.5 (crash-safety idempotency).
+E2E gates: T6.5 (health), T9.4 (POST happy path), T10.3 (GET happy path + 404), T11.3 (negative-path matrix), T11.5 (replay-after-restart idempotency).
 
 ---
 
@@ -126,10 +126,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markr"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/markr/db/schema.sql" = "markr/db/schema.sql"
 ```
+
+> **Note:** the `[tool.hatch.build.targets.wheel.force-include]` block that ships `schema.sql` in the wheel is added in T4.1, *after* the SQL file exists. Adding it here would make `uv sync` fail with `FileNotFoundError: Forced include not found`.
 
 - [ ] **Step 3: Lock + install**
 
@@ -672,18 +671,18 @@ async def h_markr(_, exc: MarkrHTTPException):
 @app.exception_handler(StarletteHTTPException)
 async def h_starlette(_, exc: StarletteHTTPException):
     if exc.status_code == 404:
-        return JSONResponse(404, {"error": "not_found", "message": "x", "details": {"reason": "unknown_route"}})
+        return JSONResponse(status_code=404, content={"error": "not_found", "message": "x", "details": {"reason": "unknown_route"}})
     if exc.status_code == 405:
-        return JSONResponse(405, {"error": "method_not_allowed", "message": "x", "details": {}})
-    return JSONResponse(exc.status_code, {"error": "internal_error", "message": "x", "details": {}})
+        return JSONResponse(status_code=405, content={"error": "method_not_allowed", "message": "x", "details": {}})
+    return JSONResponse(status_code=exc.status_code, content={"error": "internal_error", "message": "x", "details": {}})
 
 @app.exception_handler(RequestValidationError)
 async def h_validation(_, exc: RequestValidationError):
-    return JSONResponse(422, {"error": "invalid_path_param", "message": "x", "details": {"raw": str(exc)}})
+    return JSONResponse(status_code=422, content={"error": "invalid_path_param", "message": "x", "details": {"raw": str(exc)}})
 
 @app.exception_handler(Exception)
 async def h_500(_, exc: Exception):
-    return JSONResponse(500, {"error": "internal_error", "message": "internal server error", "details": {}})
+    return JSONResponse(status_code=500, content={"error": "internal_error", "message": "internal server error", "details": {}})
 
 @app.get("/markr")
 async def m(): raise MarkrHTTPException(422, "wrong_root", "x")
@@ -697,7 +696,10 @@ from fastapi import Path
 async def p(x: Annotated[str, Path(max_length=3)]): return {"x": x}
 
 async def main():
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+    # raise_app_exceptions=False so the catch-all Exception handler's 500 envelope
+    # is observable instead of bubbling RuntimeError out to the test.
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         for path in ["/markr", "/unknown", "/boom", "/p/toolong"]:
             r = await c.get(path)
             print(path, "→", r.status_code, r.json())
@@ -962,14 +964,35 @@ CREATE TABLE IF NOT EXISTS test_results (
 );
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Add `force-include` to ship `schema.sql` in the wheel**
 
-```bash
-git add src/markr/db/schema.sql
-git commit -m "feat: schema.sql with CHECKs per spec §7.1"
+Append to `pyproject.toml`:
+
+```toml
+[tool.hatch.build.targets.wheel.force-include]
+"src/markr/db/schema.sql" = "markr/db/schema.sql"
 ```
 
-**Acceptance criteria:** file exists and matches spec §7.1 byte-for-byte (modulo comment).
+Re-lock and verify:
+
+```bash
+uv sync
+uv run python -c "from importlib.resources import files; print(files('markr.db') / 'schema.sql')"
+```
+
+The print should resolve to the venv-installed path (or editable source path), not raise.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/markr/db/schema.sql pyproject.toml uv.lock
+git commit -m "feat: schema.sql with CHECKs per spec §7.1; ship in wheel via hatch force-include"
+```
+
+**Acceptance criteria:**
+- `src/markr/db/schema.sql` matches spec §7.1 byte-for-byte (modulo comment).
+- `uv sync` succeeds with the `force-include` block present.
+- `importlib.resources.files("markr.db") / "schema.sql"` resolves at runtime.
 
 ---
 
@@ -1223,7 +1246,10 @@ async def test_request_validation(app):
 
 @pytest.mark.asyncio
 async def test_unhandled_exception_500(app):
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+    # raise_app_exceptions=False so the catch-all Exception handler's 500 envelope
+    # is observable instead of bubbling RuntimeError out to the test.
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         r = await c.get("/boom")
         assert r.status_code == 500
         assert r.json()["error"] == "internal_error"
@@ -1485,7 +1511,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+# Intentionally NO module-scope `app = create_app()`.
+# Settings() requires DATABASE_URL and would fire at import time, breaking any
+# test that imports `markr.main` before setting the env var.
+# Production runs via `uvicorn markr.main:create_app --factory` (see Dockerfile).
 ```
 
 - [ ] **Step 2: Lifespan integration test**
@@ -1563,7 +1592,7 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 COPY --from=builder /opt/venv /opt/venv
 EXPOSE 4567
-CMD ["uvicorn", "markr.main:app", "--host", "0.0.0.0", "--port", "4567", "--workers", "2"]
+CMD ["uvicorn", "markr.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "4567", "--workers", "2"]
 ```
 
 - [ ] **Step 2: Commit**
@@ -2452,7 +2481,7 @@ class Repository:
                 count=count,
             )
 
-    async def debug_select(self, test_id: str) -> list[dict]:
+    async def debug_select(self, test_id: str) -> list[dict[str, object]]:
         async with self._read.connect() as conn:
             res = await conn.execute(
                 text("SELECT * FROM test_results WHERE test_id = :t"),
@@ -3423,9 +3452,11 @@ git commit -m "test: sample fixture round-trip + idempotent replay (spec §5.5)"
 
 ---
 
-### Task 11.5: 🟢 **E2E checkpoint #5 — crash safety / replay idempotency via curl**
+### Task 11.5: 🟢 **E2E checkpoint #5 — replay-after-restart idempotency via curl**
 
 **Spec:** §5.5
+
+> **Scope note:** this checkpoint exercises the "after-COMMIT replay converges" guarantee from spec §5.5 (the bottom rows of the crash-point table). It does NOT inject an in-flight crash (`kill -9` mid-COMMIT) — that would test rows 2–4 of the matrix. Spec §5.5 only mandates the *guarantee* (idempotent replay via `GREATEST(...)`); in-flight crash injection is out of scope for the prototype.
 
 - [ ] **Step 1: Bring up**
 
