@@ -245,7 +245,7 @@ git commit -m "chore: project skeleton per spec §4"
 - Create: `spikes/sig_defusedxml.py`
 - Create: `spikes/spike_defusedxml.py`
 
-- [ ] **Step 1: Signature spike**
+- [x] **Step 1: Signature spike**
 
 ```python
 # spikes/sig_defusedxml.py
@@ -258,7 +258,7 @@ print("doc:", (fromstring.__doc__ or "")[:200])
 
 Run: `uv run python spikes/sig_defusedxml.py`
 
-- [ ] **Step 2: Runtime spike**
+- [x] **Step 2: Runtime spike**
 
 ```python
 # spikes/spike_defusedxml.py
@@ -283,7 +283,7 @@ except Exception as exc:
 
 Run: `uv run python spikes/spike_defusedxml.py`
 
-- [ ] **Step 3: Commit with output in message**
+- [x] **Step 3: Commit with output in message**
 
 ```bash
 git add spikes/sig_defusedxml.py spikes/spike_defusedxml.py
@@ -306,7 +306,7 @@ git commit -m "spike: defusedxml.fromstring returns stdlib Element (verifies §3
 
 > Requires Postgres reachable via testcontainers — spike spins one up.
 
-- [ ] **Step 1: Signature spike**
+- [x] **Step 1: Signature spike**
 
 ```python
 # spikes/sig_sa_async.py
@@ -317,7 +317,7 @@ print("create_async_engine:", inspect.signature(create_async_engine))
 print("text:", inspect.signature(text))
 ```
 
-- [ ] **Step 2: Runtime spike (testcontainers Postgres + UPSERT + PERCENTILE_CONT)**
+- [x] **Step 2: Runtime spike (testcontainers Postgres + UPSERT + PERCENTILE_CONT)**
 
 ```python
 # spikes/spike_sa_async.py
@@ -367,7 +367,7 @@ asyncio.run(main())
 
 Run: `uv run python spikes/spike_sa_async.py`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add spikes/sig_sa_async.py spikes/spike_sa_async.py
@@ -388,7 +388,7 @@ git commit -m "spike: sqlalchemy async + asyncpg + UPSERT + PERCENTILE_CONT veri
 **Files:**
 - Create: `spikes/spike_asgi_bodycap.py`
 
-- [ ] **Step 1: Pure ASGI middleware that streams `receive` and aborts at N bytes**
+- [x] **Step 1: Pure ASGI middleware that streams `receive` and aborts at N bytes**
 
 ```python
 # spikes/spike_asgi_bodycap.py
@@ -459,7 +459,7 @@ asyncio.run(main())
 
 Run: `uv run python spikes/spike_asgi_bodycap.py`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add spikes/spike_asgi_bodycap.py
@@ -480,7 +480,7 @@ git commit -m "spike: pure ASGI body-cap middleware blocks oversize and lying co
 **Files:**
 - Create: `spikes/spike_pydantic_order.py`
 
-- [ ] **Step 1: Confirm dump order matches declaration order**
+- [x] **Step 1: Confirm dump order matches declaration order**
 
 ```python
 # spikes/spike_pydantic_order.py
@@ -502,7 +502,7 @@ print(m.model_dump_json())
 
 Run: `uv run python spikes/spike_pydantic_order.py`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add spikes/spike_pydantic_order.py
@@ -523,7 +523,7 @@ git commit -m "spike: pydantic v2 dump preserves field declaration order"
 **Files:**
 - Create: `spikes/spike_settings.py`
 
-- [ ] **Step 1: Verify env wiring + missing-field failure**
+- [x] **Step 1: Verify env wiring + missing-field failure**
 
 ```python
 # spikes/spike_settings.py
@@ -553,7 +553,7 @@ except Exception as exc:
 
 Run: `uv run python spikes/spike_settings.py`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add spikes/spike_settings.py
@@ -571,7 +571,7 @@ git commit -m "spike: pydantic-settings loads env + fails fast on missing requir
 **Files:**
 - Create: `spikes/spike_advisory_lock.py`
 
-- [ ] **Step 1: Two concurrent connections both running advisory-lock-protected DDL**
+- [x] **Step 1: Two concurrent connections both running advisory-lock-protected DDL**
 
 ```python
 # spikes/spike_advisory_lock.py
@@ -603,7 +603,7 @@ asyncio.run(main())
 
 Run: `uv run python spikes/spike_advisory_lock.py`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add spikes/spike_advisory_lock.py
@@ -621,7 +621,7 @@ git commit -m "spike: pg_advisory_xact_lock serialises concurrent CREATE TABLE I
 **Files:**
 - Create: `spikes/spike_testcontainers_fixture.py`
 
-- [ ] **Step 1: Confirm context-manager URL works in async + connection-url shape**
+- [x] **Step 1: Confirm context-manager URL works in async + connection-url shape**
 
 ```python
 # spikes/spike_testcontainers_fixture.py
@@ -634,7 +634,7 @@ with PostgresContainer("postgres:16-alpine", driver="asyncpg") as pg:
 
 Run: `uv run python spikes/spike_testcontainers_fixture.py`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add spikes/spike_testcontainers_fixture.py
@@ -652,7 +652,7 @@ git commit -m "spike: testcontainers postgres URL shape for asyncpg"
 **Files:**
 - Create: `spikes/spike_fastapi_handlers.py`
 
-- [ ] **Step 1: Verify the 4-handler matrix actually fires the handler we expect**
+- [x] **Step 1: Verify the 4-handler matrix actually fires the handler we expect**
 
 ```python
 # spikes/spike_fastapi_handlers.py
@@ -721,7 +721,7 @@ asyncio.run(main())
 
 Run: `uv run python spikes/spike_fastapi_handlers.py`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add spikes/spike_fastapi_handlers.py
