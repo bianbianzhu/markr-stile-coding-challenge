@@ -1928,7 +1928,7 @@ git commit -m "feat: root + record-count gate (spec §5.4, §7.4)"
 - Create: `src/markr/ingestion/validator.py`
 - Create: `tests/test_validator.py`
 
-- [ ] **Step 1: Failing test (covers precedence)**
+- [x] **Step 1: Failing test (covers precedence)**
 
 ```python
 # tests/test_validator.py
@@ -2037,7 +2037,7 @@ def test_long_test_id_rejected():
     assert ei.value.error == "invalid_field_value"
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/ingestion/validator.py
@@ -2164,7 +2164,7 @@ def validate_record(record: Element) -> RawRecord:
     )
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_validator.py -v
