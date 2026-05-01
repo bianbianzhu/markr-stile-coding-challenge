@@ -2285,7 +2285,7 @@ git commit -m "feat: in-memory dedup with max/last-non-null rules (spec §5.4)"
 - Create: `tests/conftest.py`
 - Create: `tests/test_repository.py`
 
-- [ ] **Step 1: Test fixture (testcontainers + bootstrap)**
+- [x] **Step 1: Test fixture (testcontainers + bootstrap)**
 
 ```python
 # tests/conftest.py
@@ -2328,7 +2328,7 @@ async def engine(db_url: str) -> AsyncEngine:
     await eng.dispose()
 ```
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 ```python
 # tests/test_repository.py
@@ -2386,7 +2386,7 @@ async def test_aggregate_no_rows(engine):
     assert stats is None
 ```
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # src/markr/db/repository.py
@@ -2499,7 +2499,7 @@ class Repository:
             return [dict(m) for m in res.mappings().all()]
 ```
 
-- [ ] **Step 4: Pass + commit**
+- [x] **Step 4: Pass + commit**
 
 ```bash
 uv run pytest tests/test_repository.py -v
