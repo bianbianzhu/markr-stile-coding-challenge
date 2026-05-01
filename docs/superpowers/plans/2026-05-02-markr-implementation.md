@@ -1440,7 +1440,7 @@ git commit -m "feat: /health (spec §10.1)"
 - Create: `src/markr/main.py`
 - Create: `tests/test_lifespan.py`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 ```python
 # src/markr/main.py
@@ -1526,7 +1526,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 # Production runs via `uvicorn markr.main:create_app --factory` (see Dockerfile).
 ```
 
-- [ ] **Step 2: Lifespan integration test**
+- [x] **Step 2: Lifespan integration test**
 
 ```python
 # tests/test_lifespan.py
@@ -1558,7 +1558,7 @@ async def test_lifespan_creates_table():
         await verify.dispose()
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_lifespan.py -v
