@@ -26,15 +26,13 @@
 10. [Round 7 — L1 vs L2: not pure deployment, but close](#round-7)
 11. [Round 7.5 — Pinning data contracts: required fields & aggregate shape](#round-7-5)
 12. [Round 8 — "What if the server crashes mid-batch?"](#round-8)
-13. [Round 9 — The 100,000-record streaming POST anxiety](#round-9)
-14. [Round 10 — Multi-scanner concurrency: stated or inferred?](#round-10)
-15. [Round 11 — Picking a decoupling level for an interview context](#round-11)
-16. [Final position](#final-position)
-17. [Open questions deferred to design spec](#deferred)
-18. [Assumptions, inclusions, exclusions, trade-offs, future work](#assumptions)
+13. [Final position](#final-position)
+14. [Open questions deferred to design spec](#deferred)
+15. [Assumptions, inclusions, exclusions, trade-offs, future work](#assumptions)
 
 ---
 
+<a id="round-0"></a>
 ## Round 0 — Setting up the subtraction exercise
 
 **TL;DR — Round 0 is a deliberately inflated straw man. The strategy is _front-load context, then subtract together_, and the cuts (with justifications) are the deliverable.**
@@ -59,6 +57,7 @@ Obvious over-engineering for a 2-3 hour take-home. I knew that before reading ca
 
 ---
 
+<a id="round-1"></a>
 ## Round 1 — First pass at the brief
 
 _Model: **Haiku** (unnoticed)._
@@ -76,6 +75,7 @@ Plus meta: docker-compose, tests, README, Git.
 
 ---
 
+<a id="round-2"></a>
 ## Round 2 — Is this an AI feature?
 
 _Model: **Haiku**._
@@ -86,6 +86,7 @@ No. Zero mention of ML, prediction, or anomaly detection in the brief — it's i
 
 ---
 
+<a id="round-3"></a>
 ## Round 3 — Is the model actually thinking?
 
 _Model: **Haiku**. I pitched the Round 0 design hoping for "you don't need any of this." Got "yes and here's how to build it." No pushback._
@@ -109,6 +110,7 @@ Fact-checks kept (held up later under Opus):
 
 ---
 
+<a id="round-4"></a>
 ## Round 4 — Re-reading the brief, slowly this time
 
 _Model: **Opus 4.7, high reasoning** — switched after the Round 3 smell test. The findings below are why the switch was worth it; Haiku wouldn't have surfaced them from the same prompt._
@@ -213,11 +215,12 @@ After Round 4, the simple "POST and GET" task had structure and constraints I ha
 
 ---
 
+<a id="round-5"></a>
 ## Round 5 — What's the best practice for parsing XML?
 
 _Model: **Opus 4.7, high reasoning** from here on. Pushback quality changed immediately._
 
-**TL;DR — final answer is a three-piece package: DOM + `defusedxml` + pre-parse cap. First pass landed on DOM + `defusedxml` (hardening > throughput). Hooks-triggered Codex review caught the missing third piece — without an input bound, `defusedxml` still leaves DOM as an OOM surface.**
+**TL;DR — final answer is a three-piece package: DOM + `defusedxml` + explicit input caps. First pass landed on DOM + `defusedxml` (hardening > throughput). Hooks-triggered Codex review caught the missing third piece — without an input bound, `defusedxml` still leaves DOM as an OOM surface.**
 
 > "What's a good pattern or best practice for parsing XML in this project?"
 
@@ -235,7 +238,7 @@ Streaming is best practice for _big_ XML, not XML in general.
 
 Our docs are sub-megabyte (one exam?). DOM wins on simplicity and order-independence (Round 4.6).
 
-Real concern is **hardening, not throughput**. Stdlib `xml.etree` is exposed to XXE, billion-laughs, external entities. `**defusedxml` is a drop-in fix — one-line import swap. Brief waves off security but `/import` accepts arbitrary XML; using it is free.
+Real concern is **hardening, not throughput**. XML parsing has a long security footgun surface: entity expansion, DTD/external-entity behaviour depending on parser, and hostile payloads. `defusedxml` is a drop-in guardrail — one-line import swap. Brief waves off security but `/import` accepts arbitrary XML; using it is free.
 
 Meta: "best practice" prompts pull instincts toward throughput; for an open ingest endpoint, hardening comes first.
 
@@ -250,9 +253,9 @@ A Claude Code hook auto-fired a Codex adversarial review. `[high]` finding:
 Two corrections:
 
 1. **All-or-nothing is a _commit_ boundary, not a _parsing_ boundary.** Stream into a staging table, commit at the end — works fine. The "DOM is forced by all-or-nothing" leg doesn't hold.
-2. `**defusedxml` blocks entity expansion, not large-but-legal bodies.* A 500MB valid XML still pins the process. DOM is safe *only on bounded input — `defusedxml` does not provide that bound.
+2. `defusedxml` blocks entity expansion, not large-but-legal bodies. A 500MB valid XML still pins the process. DOM is safe *only* on bounded input — `defusedxml` does not provide that bound.
 
-So "DOM is fine" is actually **DOM + bounded input**. The bound must come from the HTTP layer, before the parser sees the body.
+So "DOM is fine" is actually **DOM + bounded input**. The body-size bound must come from the HTTP layer, before the parser sees the body.
 
 ### Decision
 
@@ -260,15 +263,16 @@ Three-piece package — remove any one, the argument breaks:
 
 - **Parser**: `defusedxml.ElementTree.fromstring(body)`
 - **Access**: DOM, `.find()` / `.findall()`, no order assumptions
-- **Pre-parse cap**: reject oversize body / record count at the HTTP layer with `413` _before_ parsing. Numbers and enforcement layer deferred — what's settled here is that _some_ cap must exist
+- **Caps**: reject an oversize body at the HTTP layer with `413` _before_ parsing; reject too many records after safe parse, before validation/DB work. Numbers and enforcement layer left open here.
 - **Fallback**: if real bodies hit tens of MB, switch to `lxml.etree.iterparse` + `element.clear()` (still hardened — `resolve_entities=False`, no DTD load)
 
 ### Open question
 
-Cap values + which layer enforces them (reverse proxy / ASGI middleware / app). Resolved in Round 5.5.
+Cap values + exact enforcement split left open here.
 
 ---
 
+<a id="round-5-5"></a>
 ## Round 5.5 — Requirements clarification: what _is_ one POST?
 
 **TL;DR — Round 5 said "some cap must exist" without numbers. The number depends on what one POST physically is. Brief + sample give a strong-enough answer: one POST = one fully-scanned stack. Cap is a defensive backstop (~10× realistic max), not a workflow bound.**
@@ -293,18 +297,23 @@ Four human-asked clarification questions before settling cap values:
 | Q1 / Q2 | Realistic per-POST: tens–hundreds of records, hundreds of KB. 100k is fiction                | At 1 paper/min, 100k = 70 days continuous; modern 60 ppm scanners still need ~28 hr                                                                                                                                                   |
 | Q4      | Inferred, not brief-stated. Per-scanner ≈ 0.01 QPS; aggregate ≈ 1–2 QPS even at 10k scanners | Each scanner emits ~one POST per 100 min                                                                                                                                                                                              |
 
+Wire-level assumption: the scanner sends a completed XML file as the request body, not an hour-long HTTP chunked-transfer stream. That keeps the DOM + body-cap decision coherent.
+
 ### Cap numbers
 
-Defensive backstop, enforced at ASGI middleware _before_ `defusedxml` sees the body:
+Defensive backstop:
 
-- Body size: **10 MB**
-- Record count: **10,000**
+- Body size: **10 MB**, enforced before `defusedxml` sees the body
+- Record count: **10,000**, enforced after safe parse and before validation/DB work
 - Either exceeded → **413 Payload Too Large**
+
+These are independent backstops; whichever trips first wins. For sample-shaped XML with full `<answer>` elements, the 10 MB body cap is tighter than 10,000 records.
 
 Documented assumptions, easy to retune if real traffic disagrees.
 
 ---
 
+<a id="round-5-6"></a>
 ## Round 5.6 — With those numbers, does Round 0 still hold up?
 
 **TL;DR — Round 0 was an admitted strawman, but it deserves a proper post-mortem now that 5.5 has nailed down the workload. Two independent arguments kill pub-sub: contract mismatch (can't reject after ack) and zero benefit (no producer pressure to absorb). Not over-engineering — _wrong design_.**
@@ -319,7 +328,7 @@ Three ways you might try to bridge them — each fails:
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Whole batch as one event          | Producer ack races consumer write. Either ack-then-reject (violates contract) or block waiting for consumer (degenerates to sync RPC — pub-sub adds nothing)                                                              |
 | One event per `<mcq-test-result>` | Reject granularity becomes per-record — directly violates "the **entire** document". Recovering batch boundaries needs `batch_id` + `total_count` + consumer-side reassembly = reinventing a transaction                  |
-| Validate fully, then pub          | All parsing/validation already done synchronously in the producer. Consumer only does UPSERT. UPSERT is one SQL statement — splitting it across a queue is one extra hop, one extra failure mode, zero architectural gain |
+| Validate fully, then pub          | All parsing/validation already done synchronously in the producer. Consumer only does the DB write. Splitting that across a queue is one extra hop, one extra failure mode, zero architectural gain |
 
 ### [2] Zero benefit — solving a problem we don't have
 
@@ -339,6 +348,7 @@ Round 0's pub-sub diagram is officially struck. The next round picks up the surv
 
 ---
 
+<a id="round-6"></a>
 ## Round 6 — Pub-sub is dead. But is decoupling?
 
 **TL;DR — Two-step round.**
@@ -421,7 +431,7 @@ Same `[component] → arrow → [component]` shape as Round 0, so the contrast i
                                                                    (shared)
 ```
 
-Difference is one line of topology: in Level 1 the two modules share a process; in Level 2 they don't. Repository abstraction stays identical — that's what makes Level 1 → Level 2 a deployment refactor, not a code refactor.
+Difference is one line of topology: in Level 1 the two modules share a process; in Level 2 they don't. Repository abstraction keeps the core data-access surface reusable, but the exact service-split cost is still unresolved here.
 
 **Level 1 is the floor, not a choice.** Step 1 established the two responsibility shapes are different on every dimension. Wedging both behind one fat handler trades ~30 LOC of boundary plumbing for a multiplier on every future change. There's no trade-off to evaluate — Level 1 is just default Python project hygiene once two distinct concerns exist.
 
@@ -430,6 +440,8 @@ Difference is one line of topology: in Level 1 the two modules share a process; 
 Brief: _"be ready for your instances to turn off at any time"_
 
 Strict reading: a single instance that gracefully restarts and re-reads its state from Postgres satisfies the literal requirement — the phrase doesn't _literally_ demand multi-replica scaling.
+
+Important distinction: "instances might die" forces per-request statelessness; it does **not** by itself require horizontal scaling across replicas. Multi-replica scaling rests on the inferred multi-scanner assumption from Round 5.5 Q4.
 
 But the cheapest way to satisfy "instance might die at any time" is **statelessness**:
 
@@ -445,10 +457,11 @@ Crucially, statelessness isn't a separate engineering decision — it's a **cons
 
 Level 1 satisfies the brief literally, including the "instances might die" line via statelessness. Level 2 buys operational independence + the ability to scale ingestion and aggregation read-load separately. Whether that's worth the extra docker-compose / connection-pool / config overhead in a 2–3h take-home is a _judgement call_ grounded in interview context, not in the brief itself.
 
-Picked up later, after the DB mechanics and concurrency assumptions are settled.
+Decision left open at this point.
 
 ---
 
+<a id="round-7"></a>
 ## Round 7 — L1 vs L2: not pure deployment, but close
 
 **TL;DR — Spawned adversarial Opus subagent to break "L1 vs L2 = purely deployment diff." Verdict MOSTLY RIGHT, six concrete code deltas at first; Codex review then forced 7.3's "two engines in one L1 process" insight, which retroactively collapsed two of those deltas (pool tuning and DB-role split aren't L2-only after all). Net L2-only: 4 hard + 1 partial + independent deploy lifecycle. Concurrency questions (multi-scanner, read-during-write): visibility identical L1/L2 (Postgres MVCC), resource isolation differs unless you do the two-engine trick. Decision: L1 with two engines.**
@@ -481,11 +494,11 @@ Subagent also flagged misleading-but-true bits in the original claim: read-after
 
 ### 7.2 — Concurrent scanners: FastAPI or Postgres handles it?
 
-Postgres handles contention. FastAPI just doesn't block.
+Postgres handles DB contention. FastAPI handles request concurrency until CPU-bound parsing or DB locks become the boundary.
 
 - 1 uvicorn worker = 1 event loop. `async def` handlers cooperatively yield at `await` (DB I/O). Two POSTs interleave during await — not threads.
-- True parallelism: `--workers N` multi-process. Round 5.5 numbers (1–2 QPS aggregate even at 10k scanners) → **2 workers** is the right default. 1 would technically clear the QPS, but XML parse is CPU-sync (no `await` until DB I/O) — a 100-record batch can block the loop ~100 ms; second worker keeps a concurrent GET responsive. 4+ is overkill.
-- **Actual concurrency boundary: Postgres row lock.** Two POSTs hitting same `(test_id, student_number)` → row-level lock serialises UPSERT, `GREATEST` resolves. Different keys → fully parallel.
+- True parallelism: `--workers N` multi-process. Round 5.5 numbers (1–2 QPS aggregate even at 10k scanners) → **2 workers** is a reasonable default. 1 would technically clear the QPS, but XML parse is CPU-sync (no `await` until DB I/O) — a 100-record batch can block the loop ~100 ms; second worker keeps a concurrent GET responsive. 4+ is hard to justify for this prototype.
+- **Actual same-key boundary: Postgres row lock.** Two POSTs hitting same `(test_id, student_number)` → row-level lock serialises UPSERT, `GREATEST` resolves. Different keys can proceed independently at the row-lock level.
 - L2 does not improve same-key contention (still serialised by row lock). For independent-key traffic L2 could in principle parallelise parse/validate/request-handling across replicas — but Round 5.5's 1–2 QPS aggregate even at 10k scanners leaves L1 (uvicorn `--workers 2`) huge headroom. Operational isolation, not throughput, would be the real reason to split.
 
 Mental-model fix: "FastAPI does threads smartly" is wrong framing. FastAPI multiplexes async handlers onto an event loop; Postgres handles actual contention. Sync `def` handlers go to a thread pool, but our handlers are `async def`.
@@ -504,12 +517,12 @@ Round 6 already killed any in-memory-not-yet-DB state — validate→tx→respon
 
 Error handling on `/aggregate/:test-id`:
 
-- Zero rows → `**404 Not Found`. Don't return `{count: 0, ...}` empty shell — that lies about an aggregate that doesn't exist.
+- Zero rows → **404 Not Found**. Don't return `{count: 0, ...}` empty shell — that lies about an aggregate that doesn't exist.
 - ≥1 row → 200 + computed stats.
 
 Same code, same behaviour, both levels.
 
-**Resource-isolation caveat.** Vanilla L1 (one shared `AsyncEngine`) lets bursty bulk import saturate connections/CPU → concurrent GET queues _before_ it ever reaches MVCC. L2 with per-service pools (Round 7.1 delta #2) isolates aggregate read latency from ingest pressure. **L1 vs L2 is defined by process count, not engine count** — so we can mitigate inside L1 by building **two `AsyncEngine` objects in one process**: write engine for ingest, read engine for aggregate, separate `pool_size` budgets, same `DATABASE_URL`. Same deploy, same 6-zero-delta L1, just two `create_async_engine(...)` calls. Buys most of L2's isolation at near-zero cost. Spec'd in 7.4 item 7.
+**Resource-isolation caveat.** Vanilla L1 (one shared `AsyncEngine`) lets bursty bulk import saturate connections/CPU → concurrent GET queues _before_ it ever reaches MVCC. L2 with per-service pools (Round 7.1 delta #2) isolates aggregate read latency from ingest pressure. **L1 vs L2 is defined by process count, not engine count** — so we can mitigate inside L1 by building **two `AsyncEngine` objects in one process**: write engine for ingest, read engine for aggregate, separate `pool_size` budgets, same `DATABASE_URL`. Same deploy shape, just two `create_async_engine(...)` calls. Buys most of L2's isolation at near-zero cost.
 
 ### 7.4 — Decision + DB hard constraints
 
@@ -556,7 +569,7 @@ Ingest module uses `write_engine`; aggregate module uses `read_engine`. Two `cre
 │ FastAPI process  ·  uvicorn --workers 2                                 │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Size-cap middleware:   body ≤ 10 MB, records ≤ 10k   → 413        │  │
+│  │ Body-size middleware:  body ≤ 10 MB                  → 413        │  │
 │  └──────────────────────────┬────────────────────────────────────────┘  │
 │                             │                                           │
 │  ┌──────────────────────────▼──────────┐  ┌──────────────────────────┐  │
@@ -564,13 +577,14 @@ Ingest module uses `write_engine`; aggregate module uses `read_engine`. Two `cre
 │  │                                     │  │                          │  │
 │  │ ① defusedxml parse         → 400    │  │ ① SELECT PERCENTILE_CONT │  │
 │  │ ② root = mcq-test-results? → 422    │  │     FROM test_results    │  │
-│  │ ③ required fields present? → 422    │  │     WHERE test_id = $1   │  │
-│  │ ④ obtained ≤ available?    → 422    │  │ ② 0 rows   → 404         │  │
-│  │ ⑤ Python dedup:                     │  │ ③ → percentages          │  │
-│  │    max(obt), max(avail) per         │  │ ④ → JSON 200             │  │
+│  │ ③ record count ≤ 10k?      → 413    │  │     WHERE test_id = $1   │  │
+│  │ ④ required fields present? → 422    │  │ ② 0 rows   → 404         │  │
+│  │ ⑤ obtained ≤ available?    → 422    │  │ ③ → percentages          │  │
+│  │ ⑥ Python dedup:                     │  │ ④ → JSON 200             │  │
+│  │    max(obt), max(avail) per         │  │                          │  │
 │  │    (test_id, student_number)        │  │                          │  │
 │  │  ─── BEGIN TX ───                   │  │                          │  │
-│  │ ⑥ multi-VALUES UPSERT, ~1000/SQL    │  │                          │  │
+│  │ ⑦ multi-VALUES UPSERT, ~1000/SQL    │  │                          │  │
 │  │    ON CONFLICT (test_id,            │  │                          │  │
 │  │      student_number) DO UPDATE      │  │                          │  │
 │  │      SET marks_* = GREATEST(...)    │  │                          │  │
@@ -598,16 +612,16 @@ Ingest module uses `write_engine`; aggregate module uses `read_engine`. Two `cre
                 │   scanned_on       TIMESTAMPTZ NULL │
                 │                                     │
                 │   CHECK marks_obtained  ≥ 0,        │
-                │         marks_available ≥ 0,        │
+                │         marks_available > 0,        │
                 │         marks_obtained ≤ available  │
                 └─────────────────────────────────────┘
 
   Concurrency: FastAPI async event loop multiplexes; row lock in
   Postgres serialises same-key UPSERTs (GREATEST resolves). Different
-  keys → fully parallel write.
+  keys can proceed independently at the row-lock level.
 
   Read/write isolation: write_engine vs read_engine = same Postgres,
-  separate pools → bursty ingest can't starve aggregate of connections.
+  separate app-side pools → bursty ingest can't consume aggregate's pool.
 
   Crash safety: COMMIT before HTTP 200; UPSERT is idempotent (re-POSTing
   the same XML is safe — GREATEST converges to the same row).
@@ -616,10 +630,9 @@ Ingest module uses `write_engine`; aggregate module uses `read_engine`. Two `cre
   → ROLLBACK + 4xx. Partial commit impossible by construction.
 ```
 
-Crash safety and async-vs-sync build on these constraints — deferred to later rounds.
-
 ---
 
+<a id="round-7-5"></a>
 ## Round 7.5 — Pinning data contracts: required fields & aggregate shape
 
 **TL;DR — Two open items from Round 4 (4.7 required-fields, 4.8 response shape) deferred to "design spec." Schema work in 7.4 makes them load-bearing now, so close here. _Required fields is genuinely DB-adjacent_ — drives `NOT NULL` + `CHECK` + the pre-UPSERT validator. _Response shape is not_ — same schema, different `SELECT` projection. Decisions: required = the 4 fields the system actually uses (`student-number`, `test-id`, `summary-marks/@available` > 0, `summary-marks/@obtained`); response = the 8 fields from the example, in the example's order, all stats as JSON floats with `count` as int, using `STDDEV_POP` for the n=1 case.**
@@ -707,7 +720,7 @@ Three sub-decisions baked into the example, all easy to miss:
 
 1. **All stats as floats** — `mean: 65.0`, not `65`. Only `count` is `int`.
 2. **Field order** — `mean, stddev, min, max, p25, p50, p75, count`. JSON unordered in spec, but string-matching test suites care. Lock order in the Pydantic response model.
-3. `**stddev=0.0` when `count=1`** — Postgres `STDDEV_SAMP` returns `NULL` for n=1 (sample stddev undefined); `STDDEV_POP` returns `0.0`. **Use `STDDEV_POP` to match the example.
+3. **`stddev=0.0` when `count=1`** — Postgres `STDDEV_SAMP` returns `NULL` for n=1 (sample stddev undefined); `STDDEV_POP` returns `0.0`. Use `STDDEV_POP` to match the example.
 
 Empty test_id (zero rows): **404** (Round 7.3). Never serve a `count: 0` shell.
 
@@ -740,6 +753,7 @@ FROM (
 
 ---
 
+<a id="round-8"></a>
 ## Round 8 — "What if the server crashes mid-batch?"
 
 I poked at the next worry:
@@ -769,91 +783,7 @@ The useful little surprise: the brief chose "highest score wins" for business re
 
 ---
 
-## Round 9 — The 100,000-record streaming POST anxiety
-
-Worry I raised:
-
-> "What if 100,000 records come in one POST? Are they all sitting in memory? Does the scanner take an hour to send them all?"
-
-Two scenarios were getting confused:
-
-- **Scenario A**: scanner finishes a stack of papers, builds one XML, POSTs it (body is fully formed before the HTTP request even starts).
-- **Scenario B**: scanner uses HTTP chunked transfer to stream records over an hour-long connection.
-
-The brief's language ("the body of the request will be XML file content," singular) and the scanner's vintage (1990s) point at Scenario A. One stack of papers becomes one POST. A school's day produces dozens of POSTs across many scanners, not one giant streaming POST.
-
-Realistic batch sizes are probably in the tens to low hundreds of records — one classroom's worth. 100,000 in a single POST is a thought experiment, not a real workflow.
-
-Operational answer to the thought experiment: cap request body size and record count. If somebody really tries to POST 100,000 records, return `413 Payload Too Large` and let them split it into 10 batches of 10,000. Each batch is its own all-or-nothing transaction. This is what HTTP request boundaries are for.
-
-So: no streaming parse needed. No "validate one, cache, then batch-upsert at the end" needed. Read the body, parse it, validate it, write it, respond. The full-batch-in-memory model is fine for realistic batch sizes, and we hard-limit unrealistic ones.
-
----
-
-## Round 10 — Multi-scanner concurrency: stated or inferred?
-
-Going back to the Level-1-vs-Level-2 question, I asked:
-
-> "Is multi-scanner concurrency stated in the brief, or am I inferring it?"
-
-Stated:
-
-> "every school system in Europe & North America"
-
-Inferred: hundreds of schools × at least one scanner each → many scanners POSTing concurrently.
-
-So multi-scanner concurrency is **a reasonable inference, not a brief requirement**. Good to flag clearly: any architectural decision justified by "we need to handle many scanners" rests on an inference, not on the spec. Worth stating explicitly so a reviewer can challenge the assumption if they disagree.
-
-What's stated in the brief about resilience:
-
-> "be ready for your instances to turn off at any time"
-
-This requires the service to be **stateless per request** — no in-memory state that survives across requests. It does **not** by itself require horizontal scalability across multiple replicas. A single instance that gracefully restarts and reads its state from Postgres satisfies the literal requirement.
-
-So the gap between "handle one well-behaved scanner" and "handle hundreds of scanners simultaneously" is mine to fill, with an explicit assumption.
-
----
-
-## Round 11 — Picking a decoupling level for an interview context
-
-The honest factor I'd been avoiding: this is a **take-home for an interview**. That changes what "good" looks like. I told Claude as much and asked for a recommendation.
-
-What an interview reviewer is plausibly looking for:
-
-- Can the candidate notice details and ambiguities in the brief?
-- Can they make defensible engineering trade-offs?
-- Does the code run? Are there tests?
-- Do they show awareness of the future without building it now?
-- Is the README clear?
-
-Roughly in that order. **Judgement is weighted higher than architectural ambition.**
-
-Against that, the case for Level 2 (two services, shared Postgres):
-
-- Looks more "enterprise"
-- Shows architectural awareness
-- ...and that's mostly it
-
-The case against Level 2 in this specific context:
-
-- The 2-3 hour budget is explicit in the brief: _"you're going to try and spend about 2-3 hours on this."_ Spending it on extra Dockerfiles instead of tests is the wrong trade.
-- The performance argument for splitting (multi-scanner load) rests on an inferred assumption (Round 10).
-- More moving parts = more chances for the demo to fall over when the reviewer runs it.
-- It can read as "candidate doesn't know when to stop adding things."
-
-Decision: **Level 1 — single service, strong module boundaries**.
-
-The README will document explicitly:
-
-- I considered Level 2
-- Why I didn't pick it
-- How the codebase is structured so that splitting later is a low-effort refactor (isolated ingestion / aggregation modules sharing a Repository)
-- The exact steps to do that split if production load justifies it
-
-This way, the README itself demonstrates the Level-2 capability without paying its operational cost. Showing the awareness ought to be worth as much as building the thing — possibly more, because it shows restraint.
-
----
-
+<a id="final-position"></a>
 ## Final position
 
 Single FastAPI service, Postgres, Docker Compose. Two endpoints. Internally:
@@ -894,7 +824,7 @@ Key decisions and where they were settled:
 
 | Decision                          | Choice                                         | Round                     |
 | --------------------------------- | ---------------------------------------------- | ------------------------- |
-| Service topology                  | Single service, Level 1 (logical decoupling)   | 11                        |
+| Service topology                  | Single service, Level 1 (logical decoupling)   | 7.4                       |
 | Language / framework              | Python + FastAPI                               | (default chosen up front) |
 | Database                          | Postgres                                       | 3                         |
 | XML parsing                       | DOM-style, no element-order assumptions        | 4.6, 5                    |
@@ -909,11 +839,12 @@ Key decisions and where they were settled:
 | Reject wrong document type        | Check root element is `mcq-test-results`       | 4.3                       |
 | Lenient parsing of unknown fields | Yes — ignore extras                            | 4.2                       |
 | `<answer>` elements               | Ignore entirely; trust `<summary-marks>`       | 4.1                       |
-| Body / record-count limits        | Cap request size; return 413 if exceeded       | 5.5, 9                    |
+| Body / record-count limits        | Cap request size; return 413 if exceeded       | 5.5                       |
 | Aggregate computation             | Postgres `PERCENTILE_CONT`, percentages        | 3, 4.10                   |
 
 ---
 
+<a id="deferred"></a>
 ## Open questions deferred to the design spec
 
 Both 4.x deferrals **closed in Round 7.5**:
@@ -923,20 +854,21 @@ Both 4.x deferrals **closed in Round 7.5**:
 
 ---
 
+<a id="assumptions"></a>
 ## Assumptions, inclusions, exclusions, trade-offs, future work
 
 The brief asks the README to cover: assumptions and why; what's included and what's left out; trade-offs; how I'd extend the solution given more time. That belongs in the README of the actual deliverable, but here's the list as it stands at the end of this thinking exercise — the README will draw from this.
 
 ### Assumptions
 
-- **One POST = one complete XML batch.** Scanner sends a request only after the body is fully assembled. (Round 9.)
-- **Realistic batch sizes are tens to low hundreds of records.** Five-figure batches are not the normal workflow. (Round 9.)
-- **Multi-scanner concurrency exists.** Inferred from "every school system in Europe & North America," not stated. (Round 10.)
+- **One POST = one complete XML batch.** Scanner sends a request only after the body is fully assembled. (Round 5.5.)
+- **Realistic batch sizes are tens to low hundreds of records.** Five-figure batches are not the normal workflow. (Round 5.5.)
+- **Multi-scanner concurrency exists.** Inferred from "every school system in Europe & North America," not stated. (Round 5.5.)
 - **Required fields are `student-number`, `test-id`, `summary-marks/@available` (>0), `summary-marks/@obtained`.** Other fields (names, `scanned-on`) are tolerated when present, ignored when absent or unparseable. (Closed in Round 7.5.)
-- `**summary-marks` is trusted; `<answer>` elements are ignored. Per the brief.
+- **`summary-marks` is trusted; `<answer>` elements are ignored.** Per the brief.
 - **Unknown XML elements are ignored without error.** Per the brief.
 - **Documents whose root element is not `<mcq-test-results>` are rejected.** Per the brief's "other kinds of XML."
-- `**available > 0` and `obtained ≤ available` enforced as validation rules, not just trusted. (`available > 0` prevents division-by-zero in aggregate; `obtained ≤ available` is defensive — the sample data is well-behaved, but the brief warns about malformed inputs.)
+- **`available > 0` and `obtained ≤ available` enforced as validation rules, not just trusted.** `available > 0` prevents division-by-zero in aggregate; `obtained ≤ available` is defensive — the sample data is well-behaved, but the brief warns about malformed inputs.
 
 ### Included
 
@@ -951,7 +883,7 @@ The brief asks the README to cover: assumptions and why; what's included and wha
 ### Excluded (deliberately)
 
 - **Redis Streams or any event queue.** Considered (Round 3); ruled out as wrong design in Round 5.6.
-- **A second service.** Considered (Round 6, 11); single service with module boundaries chosen instead.
+- **A second service.** Considered (Round 6, 7); single service with module boundaries chosen instead.
 - **A hot aggregate cache.** The brief explicitly says aggregation doesn't need to be fast.
 - **SSE / push notifications.** Future-dashboard concern, not a current requirement.
 - **Authentication / TLS.** Brief explicitly waves these off.
@@ -972,7 +904,7 @@ The brief asks the README to cover: assumptions and why; what's included and wha
 These are intentionally separated by trigger — what would have to be true to justify each step:
 
 - **If real-time dashboards become a requirement** (currently a hint, not a need): introduce an event publisher _after_ the database commit (so the database remains the source of truth), have a separate consumer maintain a Redis hash of pre-aggregated stats per `test-id`, and serve those over SSE. The existing `GET /results/.../aggregate` endpoint stays unchanged as the canonical answer.
-- **If ingestion volume grows to many scanners with real bursts**: split ingestion and aggregation into separate services. The Repository abstraction means this is a deployment refactor, not a code refactor. Aggregation can scale read replicas independently.
+- **If ingestion volume grows to many scanners with real bursts**: split ingestion and aggregation into separate services. The existing module/Repository boundary keeps the code changes local, but R7.1's service-level deltas still apply. Aggregation can scale read replicas independently.
 - **If batch sizes grow into the millions**: switch the write path from multi-VALUES UPSERT to `COPY` into a staging table, then a single set-based MERGE into the main table. This is faster and uses much less memory. The application code changes are localised to the Repository.
 - **If observability matters**: add structured logging, request IDs, OpenTelemetry tracing on the parse/validate/upsert phases, and Prometheus metrics on rejection rate, batch size distribution, and end-to-end latency.
 - **If test-id metadata becomes useful** (test name, subject, max possible score historically): a separate `tests` table referenced by foreign key, populated from the test-id space we observe.
