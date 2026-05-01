@@ -2699,7 +2699,7 @@ git commit -m "feat: ingestion pipeline orchestrator (spec §5.3, §5.4)"
 - Create: `src/markr/api/ingestion.py`
 - Create: `tests/test_ingestion_route.py`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_ingestion_route.py
@@ -2755,7 +2755,7 @@ async def test_wrong_method(app):
         assert r.json()["error"] == "method_not_allowed"
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/api/ingestion.py
@@ -2780,7 +2780,7 @@ def build_ingestion_router(repo: Repository) -> APIRouter:
     return r
 ```
 
-- [ ] **Step 3: Wire into create_app + pass**
+- [x] **Step 3: Wire into create_app + pass**
 
 Modify `src/markr/main.py` `create_app()`:
 
@@ -2794,7 +2794,7 @@ app.include_router(build_ingestion_router(repo))
 app.state.repository = repo
 ```
 
-- [ ] **Step 4: Pass + commit**
+- [x] **Step 4: Pass + commit**
 
 ```bash
 uv run pytest tests/test_ingestion_route.py -v

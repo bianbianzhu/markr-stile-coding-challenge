@@ -13,9 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from markr.api.body_cap import BodyCapMiddleware
 from markr.api.exception_handlers import register_exception_handlers
+from markr.api.ingestion import build_ingestion_router
 from markr.api.ops import build_ops_router
 from markr.config import Settings
 from markr.db.engines import build_read_engine, build_write_engine
+from markr.db.repository import Repository
 
 SCHEMA_LOCK_KEY = 0x4D41524B
 
@@ -52,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     write_engine = build_write_engine(settings)
     read_engine = build_read_engine(settings)
+    repo = Repository(write_engine, read_engine)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -66,7 +69,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(BodyCapMiddleware)
     register_exception_handlers(app)
+    app.include_router(build_ingestion_router(repo))
     app.include_router(build_ops_router(read_engine))
+    app.state.repository = repo
     app.state.write_engine = write_engine
     app.state.read_engine = read_engine
     return app
