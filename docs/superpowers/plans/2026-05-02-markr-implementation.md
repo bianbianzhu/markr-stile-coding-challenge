@@ -3156,7 +3156,7 @@ git commit --allow-empty -m "test(e2e): aggregate happy + 404 verified via curl"
 **Files:**
 - Create: `tests/test_body_cap_integration.py`
 
-- [ ] **Step 1: Test**
+- [x] **Step 1: Test**
 
 ```python
 # tests/test_body_cap_integration.py
@@ -3181,7 +3181,7 @@ async def test_oversize_body_413(engine):
         assert r.json()["error"] == "body_too_large"
 ```
 
-- [ ] **Step 2: Pass + commit**
+- [x] **Step 2: Pass + commit**
 
 ```bash
 uv run pytest tests/test_body_cap_integration.py -v
