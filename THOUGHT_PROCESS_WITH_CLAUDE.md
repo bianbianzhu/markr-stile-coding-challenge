@@ -744,7 +744,7 @@ FROM (
 
 I poked at the next worry:
 
-> "If 1,000 records are sitting in memory waiting to be UPSERTed and the server crashes, what happens?"
+> "If a chunk of 1,000 records is sitting in memory waiting to be UPSERTed — or the request hits the 10,000-record cap — and the server crashes, what happens?"
 
 Claude walked through it carefully and the answer is reassuring once laid out:
 
@@ -757,7 +757,7 @@ Claude walked through it carefully and the answer is reassuring once laid out:
 | **After commit, before sending 200** | **batch committed**                     | connection drop           | Yes — replay is safe if the caller resubmits |
 | After 200 sent                       | batch committed                         | 200 OK                    | Yes — normal accepted path                   |
 
-Three separate concerns:
+Three layers of defence:
 
 1. **Atomicity**: one transaction wraps the whole request. Chunking only changes how many SQL statements we send; it does not weaken the commit boundary. If chunk 7/10 fails before we issue `COMMIT` — for example because the connection drops, the query times out, Postgres restarts, or the DB rejects the statement — chunks 1-6 are rolled back with it. Until `COMMIT` finishes, the batch is not accepted.
 2. **Ambiguous commit + idempotent write**: HTTP cannot prove the caller received the 200 after commit, and a dropped connection during `COMMIT` leaves the caller unable to tell whether Postgres committed or rolled back. The brief specifies print-and-manual recovery for rejected documents, not automatic scanner retry. If the same document is submitted again after an ambiguous failure, `GREATEST` makes that replay safe: same XML twice converges to the same row.
