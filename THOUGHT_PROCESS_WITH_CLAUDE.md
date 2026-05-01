@@ -16,8 +16,8 @@
 
 1. [Round 0 — Setting up the subtraction exercise](#round-0)
 2. [Round 1 — First pass at the brief](#round-1)
-3. [Round 2 — The "is this AI feature?" question](#round-2)
-4. [Round 3 — Proposing the over-engineered version](#round-3)
+3. [Round 2 — Is this an AI feature?](#round-2)
+4. [Round 3 — Is the model actually thinking?](#round-3)
 5. [Round 4 — Re-reading the brief, slowly this time](#round-4)
 6. [Round 5 — What's the best practice for parsing XML?](#round-5)
 7. [Round 5.5 — Requirements clarification: what _is_ one POST?](#round-5-5)
@@ -25,10 +25,11 @@
 9. [Round 6 — Pub-sub is dead. But is decoupling?](#round-6)
 10. [Round 7 — L1 vs L2: not pure deployment, but close](#round-7)
 11. [Round 7.5 — Pinning data contracts: required fields & aggregate shape](#round-7-5)
-12. [Round 8 — "What if the server crashes mid-batch?"](#round-8)
-13. [Final position](#final-position)
-14. [Open questions deferred to design spec](#deferred)
-15. [Assumptions, inclusions, exclusions, trade-offs, future work](#assumptions)
+12. [Round 7.6 — HTTP error code policy](#round-7-6)
+13. [Round 8 — "What if the server crashes mid-batch?"](#round-8)
+14. [Final position](#final-position)
+15. [Round-4 deferrals closed in 7.5](#deferred)
+16. [Assumptions, inclusions, exclusions, trade-offs, future work](#assumptions)
 
 ---
 
@@ -156,7 +157,7 @@ Sample is "happy path + duplicates"; malformed cases must be imagined. Brief sti
 
 ### 4.6 — Element order is not fixed
 
-Brief example places `<summary-marks>` near the top; sample places it at the bottom. Use DOM `.find()`, not order-dependent SAX.
+Brief example places `<summary-marks>` near the top; sample places it at the bottom. Use DOM `.find()`, not an order-dependent streaming parser.
 
 ### 4.7 — "Important fields" deliberately undefined
 
@@ -753,12 +754,34 @@ FROM (
 
 ---
 
+<a id="round-7-6"></a>
+## Round 7.6 — HTTP error code policy
+
+R7.4 put status codes into the L1 diagram before arguing them. Pin them down here so the implementation spec does not invent its own taxonomy.
+
+Policy:
+
+| Failure                                     | Status | Why                                                                                         |
+| ------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
+| `Content-Type` is not `text/xml+markr`      | 415    | Endpoint only supports Markr XML payloads                                                    |
+| Body over 10 MB                             | 413    | Raw request entity is too large; reject before parser sees it                               |
+| Malformed XML                               | 400    | Request body is syntactically invalid                                                       |
+| XML root is not `<mcq-test-results>`        | 422    | XML is well-formed, but not the document type this endpoint can process                     |
+| More than 10,000 `<mcq-test-result>` rows   | 413    | Valid XML, but the submitted request entity exceeds this service's accepted batch size      |
+| Required field missing                      | 422    | Correct document type, semantically unprocessable record                                    |
+| `available <= 0` or `obtained > available`  | 422    | Correct document type, invalid score semantics                                              |
+| Aggregate `test-id` has no persisted rows   | 404    | The requested aggregate does not exist                                                      |
+
+`413` for the record-count cap is a deliberate operational-cap choice, not a claim that the raw byte body was too large. `422` would also be defensible; using `413` keeps both hard input-size backstops in the same family.
+
+---
+
 <a id="round-8"></a>
 ## Round 8 — "What if the server crashes mid-batch?"
 
 I poked at the next worry:
 
-> "If a chunk of 1,000 records is sitting in memory waiting to be UPSERTed — or the request hits the 10,000-record cap — and the server crashes, what happens?"
+> "If a chunk of 1,000 records is sitting in memory waiting to be UPSERTed — or a request at the 10,000-record upper bound is being processed — and the server crashes, what happens?"
 
 Claude walked through it carefully and the answer is reassuring once laid out:
 
@@ -771,11 +794,11 @@ Claude walked through it carefully and the answer is reassuring once laid out:
 | **After commit, before sending 200** | **batch committed**                     | connection drop           | Yes — replay is safe if the caller resubmits |
 | After 200 sent                       | batch committed                         | 200 OK                    | Yes — normal accepted path                   |
 
-Three layers of defence:
+Two correctness guarantees, plus one operational implication:
 
 1. **Atomicity**: one transaction wraps the whole request. Chunking only changes how many SQL statements we send; it does not weaken the commit boundary. If chunk 7/10 fails before we issue `COMMIT` — for example because the connection drops, the query times out, Postgres restarts, or the DB rejects the statement — chunks 1-6 are rolled back with it. Until `COMMIT` finishes, the batch is not accepted.
 2. **Ambiguous commit + idempotent write**: HTTP cannot prove the caller received the 200 after commit, and a dropped connection during `COMMIT` leaves the caller unable to tell whether Postgres committed or rolled back. The brief specifies print-and-manual recovery for rejected documents, not automatic scanner retry. If the same document is submitted again after an ambiguous failure, `GREATEST` makes that replay safe: same XML twice converges to the same row.
-3. **Operational recovery**: if commit succeeds but the 200 is lost, the service cannot force the caller to know that. Server-side correctness comes from idempotent replay if the caller or operator submits the document again through the same `/import` path. If manual recovery writes to some other system, that is outside this service's guarantees.
+3. **Operational recovery implication**: if commit succeeds but the 200 is lost, the service cannot force the caller to know that. Server-side correctness comes from idempotent replay if the caller or operator submits the document again through the same `/import` path. If manual recovery writes to some other system, that is outside this service's guarantees.
 
 The in-memory batch worry is real for memory-pressure reasons; Round 5.5's 10 MB / 10,000-record caps are the answer to that. This round is only about crash recovery: transaction boundary + idempotent replay keep the database from landing in a half-accepted state.
 
@@ -820,32 +843,40 @@ Single FastAPI service, Postgres, Docker Compose. Two endpoints. Internally:
             └──────────┘
 ```
 
+The diagram is intentionally compressed. The load-bearing R7.4 details still stand:
+
+- `uvicorn --workers 2`
+- body-size middleware rejects bodies over 10 MB before XML parse
+- ingestion and aggregation use separate `write_engine` / `read_engine` pools inside the same FastAPI process
+
 Key decisions and where they were settled:
 
 | Decision                          | Choice                                         | Round                     |
 | --------------------------------- | ---------------------------------------------- | ------------------------- |
 | Service topology                  | Single service, Level 1 (logical decoupling)   | 7.4                       |
+| Read/write DB pools               | Two engines in one process                     | 7.3, 7.4                  |
 | Language / framework              | Python + FastAPI                               | (default chosen up front) |
 | Database                          | Postgres                                       | 3                         |
 | XML parsing                       | DOM + `defusedxml`, order-independent          | 4.6, 5                    |
 | Validation                        | All-or-nothing, before any DB write            | 4.4, 6, 7.4, 8            |
 | Transaction boundary              | One per HTTP request                           | 4.4, 6, 7.4, 8            |
-| Dedup within a request            | Application-layer, max() per `(student, test)` | 7                         |
-| Dedup across requests             | DB UPSERT with `GREATEST(...)`                 | 6, 4.9                    |
-| Bulk write strategy               | Multi-VALUES UPSERT, chunked (~1000 rows)      | 7                         |
-| Async                             | Use FastAPI's async I/O; no fire-and-forget    | 7.2, 7.4                  |
+| Dedup within a request            | Application-layer, max() per `(student, test)` | 7.4 item 4                |
+| Dedup across requests             | DB UPSERT with `GREATEST(...)`                 | 4.9, 7.4 item 3           |
+| Bulk write strategy               | Multi-VALUES UPSERT, chunked (~1000 rows)      | 7.4 item 6                |
+| Async                             | FastAPI async I/O, `uvicorn --workers 2`       | 7.2, 7.4                  |
 | Crash safety                      | Tx + idempotent UPSERT for ambiguous failure   | 8                         |
-| Reject malformed XML              | Return HTTP 4xx, no partial commit             | 4.4, 8                    |
-| Reject wrong document type        | Check root element is `mcq-test-results`       | 4.3                       |
+| Content type                      | Require `text/xml+markr`; otherwise 415        | 7.6                       |
+| Reject malformed XML              | 400, no partial commit                         | 4.4, 7.6, 8               |
+| Reject wrong document type        | Check root element; otherwise 422              | 4.3, 7.6                  |
 | Lenient parsing of unknown fields | Yes — ignore extras                            | 4.2                       |
 | `<answer>` elements               | Ignore entirely; trust `<summary-marks>`       | 4.1                       |
-| Body / record-count limits        | 10 MB body + 10k records; 413 if exceeded      | 5.5                       |
+| Body / record-count limits        | 10 MB body + 10k records; 413 if exceeded      | 5, 5.5, 7.6               |
 | Aggregate computation             | Postgres `PERCENTILE_CONT`, percentages        | 3, 4.10                   |
 
 ---
 
 <a id="deferred"></a>
-## Open questions deferred to the design spec
+## Round-4 deferrals closed in 7.5
 
 Both 4.x deferrals **closed in Round 7.5**:
 
@@ -889,7 +920,7 @@ The brief asks the README to cover: assumptions and why; what's included and wha
 - **Authentication / TLS.** Brief explicitly waves these off.
 - **Use of `<answer>` elements.** Brief explicitly says to ignore them.
 - **100% test coverage.** Brief explicitly says not to aim for it.
-- **Streaming XML parser.** Avoided in favour of DOM parsing — simpler and sidesteps the element-order question.
+- **Streaming XML parser.** Avoided in favour of DOM parsing because the 10 MB body cap makes full-tree parsing safe enough, and DOM sidesteps the element-order question.
 
 ### Trade-offs
 
