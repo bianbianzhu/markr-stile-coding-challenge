@@ -1127,7 +1127,7 @@ git commit -m "feat: write/read AsyncEngine factories (spec §2, §10.3)"
 - Create: `src/markr/api/errors.py`
 - Create: `tests/test_errors.py`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_errors.py
@@ -1145,7 +1145,7 @@ def test_default_details():
     assert e.details == {}
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/api/errors.py
@@ -1167,7 +1167,7 @@ class MarkrHTTPException(HTTPException):
         self.details = details or {}
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_errors.py -v
