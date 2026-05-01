@@ -2187,7 +2187,7 @@ git commit -m "feat: per-record validator (spec §6, §9.3)"
 - Create: `src/markr/ingestion/dedup.py`
 - Create: `tests/test_dedup.py`
 
-- [ ] **Step 1: Failing test (uses spec §5.4 example table)**
+- [x] **Step 1: Failing test (uses spec §5.4 example table)**
 
 ```python
 # tests/test_dedup.py
@@ -2234,7 +2234,7 @@ def test_keys_independent():
     assert keys == {("X", "1"), ("X", "2"), ("Y", "1")}
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/ingestion/dedup.py
@@ -2264,7 +2264,7 @@ def dedup(records: Iterable[RawRecord]) -> list[RawRecord]:
     return list(by_key.values())
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_dedup.py -v
