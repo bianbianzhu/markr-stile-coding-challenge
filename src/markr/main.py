@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from markr.api.aggregation import build_aggregation_router
 from markr.api.body_cap import BodyCapMiddleware
 from markr.api.exception_handlers import register_exception_handlers
 from markr.api.ingestion import build_ingestion_router
@@ -70,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodyCapMiddleware)
     register_exception_handlers(app)
     app.include_router(build_ingestion_router(repo))
+    app.include_router(build_aggregation_router(repo))
     app.include_router(build_ops_router(read_engine))
     app.state.repository = repo
     app.state.write_engine = write_engine

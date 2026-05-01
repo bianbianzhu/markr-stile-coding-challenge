@@ -2894,7 +2894,7 @@ git commit --allow-empty -m "test(e2e): POST /import happy path verified with sa
 - Create: `src/markr/api/aggregation.py`
 - Create: `tests/test_aggregation_route.py`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_aggregation_route.py
@@ -2957,7 +2957,7 @@ async def test_aggregate_path_too_long(app):
         assert r.json()["error"] == "invalid_path_param"
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/api/aggregation.py
@@ -3011,7 +3011,7 @@ def build_aggregation_router(repo: Repository) -> APIRouter:
     return r
 ```
 
-- [ ] **Step 3: Wire into create_app**
+- [x] **Step 3: Wire into create_app**
 
 Modify `src/markr/main.py`:
 
@@ -3021,7 +3021,7 @@ from markr.api.aggregation import build_aggregation_router
 app.include_router(build_aggregation_router(repo))
 ```
 
-- [ ] **Step 4: Pass + commit**
+- [x] **Step 4: Pass + commit**
 
 ```bash
 uv run pytest tests/test_aggregation_route.py -v
