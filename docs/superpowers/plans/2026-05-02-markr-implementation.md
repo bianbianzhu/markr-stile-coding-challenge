@@ -1825,7 +1825,7 @@ git commit -m "feat: defusedxml typed shim (spec §3.1, §5.4)"
 - Create: `src/markr/ingestion/structure.py`
 - Create: `tests/test_structure.py`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_structure.py
@@ -1868,7 +1868,7 @@ def test_zero_records_422_empty_batch():
     assert ei.value.error == "empty_batch"
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/ingestion/structure.py
@@ -1908,7 +1908,7 @@ def gate_root_and_count(root: Element) -> list[Element]:
     return records
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_structure.py -v
