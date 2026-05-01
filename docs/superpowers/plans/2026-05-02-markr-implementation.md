@@ -3040,7 +3040,7 @@ git commit -m "feat: GET /results/{test_id}/aggregate (spec §8)"
 **Files:**
 - Create: `tests/test_aggregation_math.py`
 
-- [ ] **Step 1: Test (verifies per-student mean of percentages, not sum/sum weighted)**
+- [x] **Step 1: Test (verifies per-student mean of percentages, not sum/sum weighted)**
 
 ```python
 # tests/test_aggregation_math.py
@@ -3073,7 +3073,7 @@ async def test_no_app_layer_rounding(engine):
     assert s.mean == pytest.approx(100.0 / 3.0, rel=1e-12)
 ```
 
-- [ ] **Step 2: Pass + commit**
+- [x] **Step 2: Pass + commit**
 
 ```bash
 uv run pytest tests/test_aggregation_math.py -v
