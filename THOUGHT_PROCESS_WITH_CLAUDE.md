@@ -26,14 +26,12 @@
 10. [Round 7 — L1 vs L2: not pure deployment, but close](#round-7)
 11. [Round 7.5 — Pinning data contracts: required fields & aggregate shape](#round-7-5)
 12. [Round 8 — "What if the server crashes mid-batch?"](#round-8)
-13. [Round 9 — Async vs. sync, one more time](#round-9)
-14. [Round 10 — "Reject the entire document" pinned down](#round-10)
-15. [Round 11 — The 100,000-record streaming POST anxiety](#round-11)
-16. [Round 12 — Multi-scanner concurrency: stated or inferred?](#round-12)
-17. [Round 13 — Picking a decoupling level for an interview context](#round-13)
-18. [Final position](#final-position)
-19. [Open questions deferred to design spec](#deferred)
-20. [Assumptions, inclusions, exclusions, trade-offs, future work](#assumptions)
+13. [Round 9 — The 100,000-record streaming POST anxiety](#round-9)
+14. [Round 10 — Multi-scanner concurrency: stated or inferred?](#round-10)
+15. [Round 11 — Picking a decoupling level for an interview context](#round-11)
+16. [Final position](#final-position)
+17. [Open questions deferred to design spec](#deferred)
+18. [Assumptions, inclusions, exclusions, trade-offs, future work](#assumptions)
 
 ---
 
@@ -519,7 +517,7 @@ Decision: **L1 with two engines in one process**. README will list 7.1's post-co
 
 DB hard constraints, ordered by "skip this and you corrupt data":
 
-1. **Types**: `student_number TEXT` (Round 4.13: `002299` ≠ `2299`), `test_id TEXT`, `marks_* INT` with `CHECK (marks_obtained >= 0 AND marks_available > 0 AND marks_obtained <= marks_available)`, `scanned_on TIMESTAMPTZ NULL`. (`available > 0` rationale in Round 7.5: aggregate divides by it.)
+1. **Types**: `student_number TEXT` (Round 4.13: `002299` ≠ `2299`), `test_id TEXT`, `marks_* INT` with `CHECK (marks_obtained >= 0 AND marks_available > 0 AND marks_obtained <= marks_available)`, `scanned_on TIMESTAMPTZ NULL`. `available > 0` because aggregate divides by it.
 2. **PK = `(test_id, student_number)`** — dedup uniqueness + leftmost-prefix covers `WHERE test_id = $1` for aggregate. No extra index needed.
 3. **UPSERT atomic, never SELECT-then-UPDATE** (concurrent-request safety):
 
@@ -531,17 +529,19 @@ DB hard constraints, ordered by "skip this and you corrupt data":
    marks_available = GREATEST(test_results.marks_available, EXCLUDED.marks_available);
 ```
 
-1. **Intra-request dedup in app code, not SQL.** Postgres `ON CONFLICT DO UPDATE` rejects multiple rows with same conflict key in one INSERT → Python pre-aggregates `(test_id, student_number) → (max(obtained), max(available))` first. Cross-request dedup stays in DB via `GREATEST`.
-2. **One tx per request, COMMIT before HTTP 200.** Validate whole batch first, then open tx, then write — don't validate-and-write in a loop, wastes DB work on requests that'll fail anyway.
-3. **Multi-VALUES chunked** ~1000 rows / SQL, well under Postgres' 65,535 param ceiling. Multi-VALUES is the default write shape because it avoids avoidable per-row round trips even at the 10k cap; `COPY` + staging is reserved for future million-row batches (see future work).
-4. **Two engines in one process** (still L1 — process count, not engine count, defines L1 vs L2). Same `DATABASE_URL`, separate pools so bursty ingest can't starve aggregate GETs. From 7.3 caveat:
+4. **Intra-request dedup in app code, not SQL.** Postgres `ON CONFLICT DO UPDATE` rejects multiple rows with same conflict key in one INSERT → Python pre-aggregates `(test_id, student_number) → (max(obtained), max(available))` first. Cross-request dedup stays in DB via `GREATEST`.
+5. **One tx per request, COMMIT before HTTP 200.** Validate whole batch first, then open tx, then write — don't validate-and-write in a loop, wastes DB work on requests that'll fail anyway.
+6. **Multi-VALUES chunked** ~1000 rows / SQL, well under Postgres' 65,535 param ceiling. Per-row async writes do not help here — round-trip count is the bottleneck, not blocking; batching is what reduces it. `COPY` + staging is reserved for future million-row batches (see future work).
+7. **Two engines in one process** (still L1 — process count, not engine count, defines L1 vs L2). Same `DATABASE_URL`, separate pools so bursty ingest can't starve aggregate GETs. From 7.3 caveat:
 
 ```python
  write_engine = create_async_engine(DATABASE_URL, pool_size=10, max_overflow=20, pool_pre_ping=True)
  read_engine  = create_async_engine(DATABASE_URL, pool_size=5,  max_overflow=10, pool_pre_ping=True)
 ```
 
-Ingest module uses `write_engine`; aggregate module uses `read_engine`. Two `create_async_engine(...)` calls, zero L2 cost. 8. **Schema bootstrap**: `CREATE TABLE IF NOT EXISTS` in lifespan startup. Alembic deferred — README documents the upgrade path.
+Ingest module uses `write_engine`; aggregate module uses `read_engine`. Two `create_async_engine(...)` calls, zero L2 cost.
+
+8. **Schema bootstrap**: `CREATE TABLE IF NOT EXISTS` in lifespan startup. Alembic deferred — README documents the upgrade path.
 
 ### L1 final shape
 
@@ -769,47 +769,7 @@ The useful little surprise: the brief chose "highest score wins" for business re
 
 ---
 
-## Round 9 — Async vs. sync, one more time
-
-I wasn't quite letting go of "but async would be faster." So I asked:
-
-> "Why not async write — record arrives, async write, eventually it's all in the DB?"
-
-Claude's response was sharp on this one. Two separate things were tangled:
-
-- **Async I/O** (don't block the event loop while waiting): FastAPI is async-native. We get this for free. Whether the SQL is awaited or not, the event loop is fine.
-- **Per-row vs. batched writes**: this is what governs throughput. Async per-row writes are still N round-trips. Async doesn't reduce round-trips — batching does.
-
-For 100,000 rows, **async per-row** and **sync per-row** are both ~50 seconds. They're both bottlenecked on round-trip count.
-
-And the deeper problem: if "async" means fire-and-forget — return 200 then write later — that breaks "reject the entire document." You can't reject what you've already acked.
-
-So: synchronous, transactional, batched. Async helpers used inside FastAPI for I/O but not as a way to defer the work.
-
----
-
-## Round 10 — "Reject the entire document" pinned down
-
-A clarifying question I asked late, which I should have asked earlier:
-
-> "Reject the entire document — does that mean the whole XML?"
-
-Yes. Quoting the brief one more time:
-
-> "When this happens, it's important that you reject the _entire_ document with an appropriate HTTP error. This causes the machine to print out the offending document (yes, print, as in, on paper) and some poor work experience kid then enters the whole thing manually."
-
-If a POST contains 100 records and record #50 is malformed, **all 100 get rejected**. The scanner prints the document, and the work-experience kid types in all 100 by hand. Partial acceptance would create a state where some records are in the database AND someone is also re-typing them — double-counting territory.
-
-This single requirement decides several architectural things at once:
-
-- Validation must finish before any write
-- One transaction per request
-- No queue-and-ack-then-process designs
-- HTTP response must reflect the actual database outcome
-
----
-
-## Round 11 — The 100,000-record streaming POST anxiety
+## Round 9 — The 100,000-record streaming POST anxiety
 
 Worry I raised:
 
@@ -830,7 +790,7 @@ So: no streaming parse needed. No "validate one, cache, then batch-upsert at the
 
 ---
 
-## Round 12 — Multi-scanner concurrency: stated or inferred?
+## Round 10 — Multi-scanner concurrency: stated or inferred?
 
 Going back to the Level-1-vs-Level-2 question, I asked:
 
@@ -854,7 +814,7 @@ So the gap between "handle one well-behaved scanner" and "handle hundreds of sca
 
 ---
 
-## Round 13 — Picking a decoupling level for an interview context
+## Round 11 — Picking a decoupling level for an interview context
 
 The honest factor I'd been avoiding: this is a **take-home for an interview**. That changes what "good" looks like. I told Claude as much and asked for a recommendation.
 
@@ -877,7 +837,7 @@ Against that, the case for Level 2 (two services, shared Postgres):
 The case against Level 2 in this specific context:
 
 - The 2-3 hour budget is explicit in the brief: _"you're going to try and spend about 2-3 hours on this."_ Spending it on extra Dockerfiles instead of tests is the wrong trade.
-- The performance argument for splitting (multi-scanner load) rests on an inferred assumption (Round 12).
+- The performance argument for splitting (multi-scanner load) rests on an inferred assumption (Round 10).
 - More moving parts = more chances for the demo to fall over when the reviewer runs it.
 - It can read as "candidate doesn't know when to stop adding things."
 
@@ -934,22 +894,22 @@ Key decisions and where they were settled:
 
 | Decision                          | Choice                                         | Round                     |
 | --------------------------------- | ---------------------------------------------- | ------------------------- |
-| Service topology                  | Single service, Level 1 (logical decoupling)   | 13                        |
+| Service topology                  | Single service, Level 1 (logical decoupling)   | 11                        |
 | Language / framework              | Python + FastAPI                               | (default chosen up front) |
 | Database                          | Postgres                                       | 3                         |
 | XML parsing                       | DOM-style, no element-order assumptions        | 4.6, 5                    |
-| Validation                        | All-or-nothing, before any DB write            | 6, 10                     |
-| Transaction boundary              | One per HTTP request                           | 6, 10                     |
+| Validation                        | All-or-nothing, before any DB write            | 4.4, 6, 7.4, 8            |
+| Transaction boundary              | One per HTTP request                           | 4.4, 6, 7.4, 8            |
 | Dedup within a request            | Application-layer, max() per `(student, test)` | 7                         |
 | Dedup across requests             | DB UPSERT with `GREATEST(...)`                 | 6, 4.9                    |
 | Bulk write strategy               | Multi-VALUES UPSERT, chunked (~1000 rows)      | 7                         |
-| Async                             | Use FastAPI's async I/O; no fire-and-forget    | 9                         |
+| Async                             | Use FastAPI's async I/O; no fire-and-forget    | 7.2, 7.4                  |
 | Crash safety                      | Tx + idempotent UPSERT for ambiguous failure   | 8                         |
-| Reject malformed XML              | Return HTTP 4xx, no partial commit             | 4.4, 10                   |
+| Reject malformed XML              | Return HTTP 4xx, no partial commit             | 4.4, 8                    |
 | Reject wrong document type        | Check root element is `mcq-test-results`       | 4.3                       |
 | Lenient parsing of unknown fields | Yes — ignore extras                            | 4.2                       |
 | `<answer>` elements               | Ignore entirely; trust `<summary-marks>`       | 4.1                       |
-| Body / record-count limits        | Cap request size; return 413 if exceeded       | 11                        |
+| Body / record-count limits        | Cap request size; return 413 if exceeded       | 5.5, 9                    |
 | Aggregate computation             | Postgres `PERCENTILE_CONT`, percentages        | 3, 4.10                   |
 
 ---
@@ -969,9 +929,9 @@ The brief asks the README to cover: assumptions and why; what's included and wha
 
 ### Assumptions
 
-- **One POST = one complete XML batch.** Scanner sends a request only after the body is fully assembled. (Round 11.)
-- **Realistic batch sizes are tens to low hundreds of records.** Five-figure batches are not the normal workflow. (Round 11.)
-- **Multi-scanner concurrency exists.** Inferred from "every school system in Europe & North America," not stated. (Round 12.)
+- **One POST = one complete XML batch.** Scanner sends a request only after the body is fully assembled. (Round 9.)
+- **Realistic batch sizes are tens to low hundreds of records.** Five-figure batches are not the normal workflow. (Round 9.)
+- **Multi-scanner concurrency exists.** Inferred from "every school system in Europe & North America," not stated. (Round 10.)
 - **Required fields are `student-number`, `test-id`, `summary-marks/@available` (>0), `summary-marks/@obtained`.** Other fields (names, `scanned-on`) are tolerated when present, ignored when absent or unparseable. (Closed in Round 7.5.)
 - `**summary-marks` is trusted; `<answer>` elements are ignored. Per the brief.
 - **Unknown XML elements are ignored without error.** Per the brief.
@@ -991,7 +951,7 @@ The brief asks the README to cover: assumptions and why; what's included and wha
 ### Excluded (deliberately)
 
 - **Redis Streams or any event queue.** Considered (Round 3); ruled out as wrong design in Round 5.6.
-- **A second service.** Considered (Round 6, 13); single service with module boundaries chosen instead.
+- **A second service.** Considered (Round 6, 11); single service with module boundaries chosen instead.
 - **A hot aggregate cache.** The brief explicitly says aggregation doesn't need to be fast.
 - **SSE / push notifications.** Future-dashboard concern, not a current requirement.
 - **Authentication / TLS.** Brief explicitly waves these off.
