@@ -1351,7 +1351,7 @@ git commit -m "feat: 4 global exception handlers per spec §9.5"
 - Create: `src/markr/api/ops.py`
 - Create: `tests/test_health.py`
 
-- [ ] **Step 1: Failing test (with testcontainers fixture deferred to conftest in T8.5; use stub here)**
+- [x] **Step 1: Failing test (with testcontainers fixture deferred to conftest in T8.5; use stub here)**
 
 ```python
 # tests/test_health.py
@@ -1388,7 +1388,7 @@ async def test_health_db_down_503():
     await engine.dispose()
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/api/ops.py
@@ -1420,7 +1420,7 @@ def build_ops_router(read_engine: AsyncEngine) -> APIRouter:
     return r
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_health.py -v
