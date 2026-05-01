@@ -1078,7 +1078,7 @@ git commit -m "feat: pydantic-settings Settings (spec §11) — DATABASE_URL req
 **Files:**
 - Create: `src/markr/db/engines.py`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 ```python
 # src/markr/db/engines.py
@@ -1105,7 +1105,7 @@ def build_read_engine(s: Settings) -> AsyncEngine:
     )
 ```
 
-- [ ] **Step 2: mypy + commit**
+- [x] **Step 2: mypy + commit**
 
 ```bash
 uv run mypy src/markr/db/engines.py
