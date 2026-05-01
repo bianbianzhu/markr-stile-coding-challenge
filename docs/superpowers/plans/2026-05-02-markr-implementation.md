@@ -1756,7 +1756,7 @@ git commit --allow-empty -m "test(e2e): health + 404 envelope verified via curl"
 
 > Prereq: T2.1 spike done.
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_xml_parser.py
@@ -1782,7 +1782,7 @@ def test_whitespace_only_raises():
         safe_parse(b"   \n\t  ")
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/ingestion/xml_parser.py
@@ -1804,7 +1804,7 @@ def safe_parse(body: bytes) -> Element:
         raise MalformedXMLError(str(exc)) from exc
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_xml_parser.py -v
