@@ -748,18 +748,19 @@ I poked at the next worry:
 
 Claude walked through it carefully and the answer is reassuring once laid out:
 
-| When the crash happens               | Committed state          | HTTP caller sees | Integrity preserved?                         |
-| ------------------------------------ | ------------------------ | ---------------- | -------------------------------------------- |
-| During parse                         | unchanged                | connection drop  | Yes — nothing accepted                       |
-| During validate                      | unchanged                | connection drop  | Yes — nothing accepted                       |
-| During UPSERT, before commit         | unchanged after rollback | connection drop  | Yes — no partial commit                      |
-| **After commit, before sending 200** | **batch committed**      | connection drop  | Yes — replay is safe if the caller resubmits |
-| After 200 sent                       | batch committed          | 200 OK           | Yes — normal accepted path                   |
+| When the crash happens               | Committed state                         | HTTP caller sees          | Integrity preserved?                         |
+| ------------------------------------ | --------------------------------------- | ------------------------- | -------------------------------------------- |
+| During parse                         | no DB call yet                          | connection drop           | Yes — nothing accepted                       |
+| During validate                      | no transaction opened                   | connection drop           | Yes — nothing accepted                       |
+| During UPSERT, before commit         | unchanged after rollback                | connection drop           | Yes — no partial commit                      |
+| **During COMMIT**                    | **committed or rolled back atomically** | connection drop / timeout | Yes — replay is safe if the caller resubmits |
+| **After commit, before sending 200** | **batch committed**                     | connection drop           | Yes — replay is safe if the caller resubmits |
+| After 200 sent                       | batch committed                         | 200 OK                    | Yes — normal accepted path                   |
 
 Three separate concerns:
 
-1. **Atomicity**: one transaction wraps the whole request. Even with chunked multi-VALUES UPSERTs, chunk 7/10 failing rolls back chunks 1-6 too. All rows commit, or none do. If any chunk fails, whether from a data constraint, connection drop, timeout, or Postgres restart, the transaction does not commit. Chunks already executed in that transaction are rolled back too.
-2. **At-least-once delivery + idempotent write**: HTTP cannot prove the caller received the 200 after commit. If the document is submitted again after an ambiguous failure (the caller did not receive a success response, so it cannot tell whether the DB committed or rolled back), `GREATEST` makes replay safe. Same XML twice converges to the same row.
+1. **Atomicity**: one transaction wraps the whole request. Chunking only changes how many SQL statements we send; it does not weaken the commit boundary. If chunk 7/10 fails because the connection drops, the query times out, or Postgres restarts and etc., chunks 1-6 are rolled back with it. Until `COMMIT` finishes, the batch is not accepted.
+2. **Ambiguous commit + idempotent write**: HTTP cannot prove the caller received the 200 after commit, and a dropped connection during `COMMIT` leaves the caller unable to tell whether Postgres committed or rolled back. If the document is submitted again after that ambiguity, `GREATEST` makes replay safe. Same XML twice converges to the same row.
 3. **Operational recovery**: for explicit 4xx rejection, the brief's print-and-manual-entry path handles recovery outside the service. If commit succeeds but the 200 is lost, server-side correctness comes from idempotent replay if the caller/operator submits the document again.
 
 The in-memory batch worry is real for memory-pressure reasons, but not for crash-recovery reasons. They're separate concerns.
