@@ -3554,14 +3554,14 @@ git commit -am "chore: ruff + mypy strict clean across src/markr"
 
 > The current `README.md` is the brief verbatim. Replace it with the deliverable README, but **preserve the brief** by moving it under a heading "Original brief" near the bottom or into `docs/brief.md` (the spec implies the deliverable README is the customer-facing one).
 
-- [ ] **Step 1: Move brief**
+- [x] **Step 1: Move brief**
 
 ```bash
 mkdir -p docs
 git mv README.md docs/brief.md
 ```
 
-- [ ] **Step 2: Write deliverable README**
+- [x] **Step 2: Write deliverable README**
 
 Sections in this exact order (spec §15):
 
@@ -3578,7 +3578,7 @@ Sections in this exact order (spec §15):
 
 Commands appendix (spec §16) optional but recommended.
 
-- [ ] **Step 3: Verify section presence with simple grep**
+- [x] **Step 3: Verify section presence with simple grep**
 
 ```bash
 for section in "Quick start" "Assumptions" "Decisions" "Excluded" "Real-time dashboards" "Future work" "Running tests"; do
@@ -3586,7 +3586,7 @@ for section in "Quick start" "Assumptions" "Decisions" "Excluded" "Real-time das
 done
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md docs/brief.md
