@@ -1577,7 +1577,7 @@ git commit -m "feat: app factory + lifespan with advisory-lock schema bootstrap 
 **Files:**
 - Create: `Dockerfile`
 
-- [ ] **Step 1: Write Dockerfile (verbatim from spec §12.1)**
+- [x] **Step 1: Write Dockerfile (verbatim from spec §12.1)**
 
 ```dockerfile
 # ── builder ──────────────────────────────────
@@ -1604,7 +1604,7 @@ EXPOSE 4567
 CMD ["uvicorn", "markr.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "4567", "--workers", "2"]
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add Dockerfile
