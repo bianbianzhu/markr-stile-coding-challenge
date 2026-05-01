@@ -760,8 +760,8 @@ Claude walked through it carefully and the answer is reassuring once laid out:
 Three separate concerns:
 
 1. **Atomicity**: one transaction wraps the whole request. Chunking only changes how many SQL statements we send; it does not weaken the commit boundary. If chunk 7/10 fails before we issue `COMMIT` — for example because the connection drops, the query times out, Postgres restarts, or the DB rejects the statement — chunks 1-6 are rolled back with it. Until `COMMIT` finishes, the batch is not accepted.
-2. **Ambiguous commit + idempotent write**: HTTP cannot prove the caller received the 200 after commit, and a dropped connection during `COMMIT` leaves the caller unable to tell whether Postgres committed or rolled back. If the document is submitted again after that ambiguity, `GREATEST` makes replay safe. Same XML twice converges to the same row.
-3. **Operational recovery**: for explicit 4xx rejection, the brief's print-and-manual-entry path handles recovery outside the service. If commit succeeds but the 200 is lost, server-side correctness comes from idempotent replay if the caller/operator submits the document again.
+2. **Ambiguous commit + idempotent write**: HTTP cannot prove the caller received the 200 after commit, and a dropped connection during `COMMIT` leaves the caller unable to tell whether Postgres committed or rolled back. The brief specifies print-and-manual recovery for rejected documents, not automatic scanner retry. If the same document is submitted again after an ambiguous failure, `GREATEST` makes that replay safe: same XML twice converges to the same row.
+3. **Operational recovery**: if commit succeeds but the 200 is lost, the service cannot force the caller to know that. Server-side correctness comes from idempotent replay if the caller or operator submits the document again through the same `/import` path. If manual recovery writes to some other system, that is outside this service's guarantees.
 
 The in-memory batch worry is real for memory-pressure reasons, but not for crash-recovery reasons. They're separate concerns.
 
