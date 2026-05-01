@@ -15,11 +15,19 @@ async def main():
                   PRIMARY KEY (k)
                 )
             """))
-            await conn.execute(
-                text("INSERT INTO t (k, v) VALUES (:k, :v) "
-                     "ON CONFLICT (k) DO UPDATE SET v = GREATEST(t.v, EXCLUDED.v)"),
-                [{"k": "a", "v": 5}, {"k": "a", "v": 3}, {"k": "b", "v": 1}],
-            )
+            await conn.execute(text("""
+                INSERT INTO t (k, v)
+                VALUES (:k1, :v1), (:k2, :v2), (:k3, :v3)
+            """), {"k1": "a", "v1": 2, "k2": "b", "v2": 7, "k3": "c", "v3": 4})
+            res = await conn.execute(text("SELECT k, v FROM t ORDER BY k"))
+            print("initial rows:", res.fetchall())
+
+            # Ingestion dedups first, so no VALUES list contains duplicate conflict keys.
+            await conn.execute(text("""
+                INSERT INTO t (k, v)
+                VALUES (:k1, :v1), (:k2, :v2), (:k3, :v3)
+                ON CONFLICT (k) DO UPDATE SET v = GREATEST(t.v, EXCLUDED.v)
+            """), {"k1": "a", "v1": 5, "k2": "b", "v2": 1, "k3": "c", "v3": 3})
             res = await conn.execute(text("SELECT k, v FROM t ORDER BY k"))
             print("rows:", res.fetchall())
 

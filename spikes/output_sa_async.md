@@ -7,7 +7,10 @@ Output:
 ```text
 create_async_engine: (url: 'Union[str, URL]', **kw: 'Any') -> 'AsyncEngine'
 text: (text: 'str') -> 'TextClause'
-url: postgresql+asyncpg://test:test@localhost:65214/test
-rows: [('a', 5), ('b', 1)]
-stats: {'mean': 3.0, 'p50': 3.0, 'sd': 2.0}
+url: postgresql+asyncpg://test:test@localhost:49324/test
+initial rows: [('a', 2), ('b', 7), ('c', 4)]
+rows: [('a', 5), ('b', 7), ('c', 4)]
+stats: {'mean': 5.333333333333333, 'p50': 5.0, 'sd': 1.247219128924647}
 ```
+
+Duplicate keys within one multi-VALUES UPSERT are not used because ingestion dedups first.

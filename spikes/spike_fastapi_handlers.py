@@ -1,6 +1,8 @@
 import asyncio
+from typing import Annotated
+
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Path
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -41,8 +43,6 @@ async def m(): raise MarkrHTTPException(422, "wrong_root", "x")
 @app.get("/boom")
 async def b(): raise RuntimeError("kaboom")
 
-from typing import Annotated
-from fastapi import Path
 @app.get("/p/{x}")
 async def p(x: Annotated[str, Path(max_length=3)]): return {"x": x}
 

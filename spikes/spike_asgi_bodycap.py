@@ -1,7 +1,6 @@
 import asyncio
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 
 LIMIT = 16  # tiny for testing
 
