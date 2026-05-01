@@ -55,9 +55,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        await _wait_for_db(write_engine)
-        await _bootstrap_schema(write_engine)
         try:
+            await _wait_for_db(write_engine)
+            await _bootstrap_schema(write_engine)
             yield
         finally:
             await write_engine.dispose()

@@ -2,7 +2,7 @@ from typing import Annotated
 
 import httpx
 import pytest
-from fastapi import FastAPI, Path
+from fastapi import FastAPI, HTTPException, Path
 
 from markr.api.errors import MarkrHTTPException
 from markr.api.exception_handlers import register_exception_handlers
@@ -20,6 +20,10 @@ def app() -> FastAPI:
     @a.get("/boom")
     async def boom() -> None:
         raise RuntimeError("kaboom")
+
+    @a.get("/teapot")
+    async def teapot() -> None:
+        raise HTTPException(status_code=418, detail="teapot")
 
     @a.get("/p/{x}")
     async def path_param(x: Annotated[str, Path(max_length=3)]) -> dict[str, str]:
@@ -61,6 +65,17 @@ async def test_method_not_allowed(app: FastAPI) -> None:
 
     assert r.status_code == 405
     assert r.json()["error"] == "method_not_allowed"
+
+
+@pytest.mark.asyncio
+async def test_unhandled_framework_http_exception_maps_to_500(app: FastAPI) -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t"
+    ) as c:
+        r = await c.get("/teapot")
+
+    assert r.status_code == 500
+    assert r.json()["error"] == "internal_error"
 
 
 @pytest.mark.asyncio

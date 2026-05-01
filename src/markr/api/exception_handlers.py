@@ -47,7 +47,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             exc.detail,
         )
         return JSONResponse(
-            status_code=exc.status_code,
+            status_code=500,
             content={
                 "error": "internal_error",
                 "message": "an unexpected framework error occurred",

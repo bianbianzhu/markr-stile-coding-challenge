@@ -1,5 +1,3 @@
-import os
-
 import httpx
 import pytest
 from sqlalchemy import text
@@ -11,10 +9,10 @@ from markr.main import create_app
 
 
 @pytest.mark.asyncio
-async def test_lifespan_creates_table() -> None:
+async def test_lifespan_creates_table(monkeypatch: pytest.MonkeyPatch) -> None:
     with PostgresContainer("postgres:16-alpine", driver="asyncpg") as pg:
         url = pg.get_connection_url()
-        os.environ["DATABASE_URL"] = url
+        monkeypatch.setenv("DATABASE_URL", url)
         app = create_app(Settings())
 
         async with app.router.lifespan_context(app):
