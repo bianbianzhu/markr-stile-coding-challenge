@@ -749,7 +749,7 @@ git commit -m "spike: fastapi handler precedence — Markr/Starlette/Validation/
 - Create: `src/markr/api/body_cap.py`
 - Create: `tests/test_body_cap.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/test_body_cap.py
@@ -812,7 +812,7 @@ async def test_non_import_route_not_gated(app):
         assert r.status_code == 200
 ```
 
-- [ ] **Step 2: Run — should fail (module missing)**
+- [x] **Step 2: Run — should fail (module missing)**
 
 ```bash
 uv run pytest tests/test_body_cap.py -v
@@ -820,7 +820,7 @@ uv run pytest tests/test_body_cap.py -v
 
 Expected: ImportError / collection error.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # src/markr/api/body_cap.py
@@ -930,13 +930,13 @@ class BodyCapMiddleware:
         await send({"type": "http.response.body", "body": body})
 ```
 
-- [ ] **Step 4: Run — should pass**
+- [x] **Step 4: Run — should pass**
 
 ```bash
 uv run pytest tests/test_body_cap.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/markr/api/body_cap.py tests/test_body_cap.py
