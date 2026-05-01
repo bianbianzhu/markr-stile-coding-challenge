@@ -84,7 +84,7 @@ E2E gates: T6.5 (health), T9.4 (POST happy path), T10.3 (GET happy path + 404), 
 - Create: `uv.lock` (generated)
 - Create: `.python-version`
 
-- [ ] **Step 1: Initialise uv project**
+- [x] **Step 1: Initialise uv project**
 
 ```bash
 cd /Users/tianyili/Learn/ml/markr
@@ -93,7 +93,7 @@ uv init --python 3.12 --no-readme --no-pin-python --bare
 
 If `uv init` complains about non-empty dir, manually create `pyproject.toml` instead of running `init`.
 
-- [ ] **Step 2: Write `pyproject.toml`**
+- [x] **Step 2: Write `pyproject.toml`**
 
 ```toml
 [project]
@@ -130,7 +130,7 @@ packages = ["src/markr"]
 
 > **Note:** the `[tool.hatch.build.targets.wheel.force-include]` block that ships `schema.sql` in the wheel is added in T4.1, *after* the SQL file exists. Adding it here would make `uv sync` fail with `FileNotFoundError: Forced include not found`.
 
-- [ ] **Step 3: Lock + install**
+- [x] **Step 3: Lock + install**
 
 ```bash
 uv sync
@@ -138,7 +138,7 @@ uv sync
 
 `[dependency-groups].dev` is installed by default by `uv sync` (PEP 735). This keeps the spec §15 reviewer command (`uv sync && uv run pytest`) working without `--extra dev`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add pyproject.toml uv.lock .python-version
@@ -159,7 +159,7 @@ git commit -m "chore: bootstrap uv project with deps per spec §3"
 **Files:**
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Append tool config**
+- [x] **Step 1: Append tool config**
 
 ```toml
 [tool.ruff]
@@ -180,7 +180,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 uv run ruff check .                                    # must exit 0 (no source files yet)
@@ -188,7 +188,7 @@ uv run mypy src/markr 2>&1 | head -5                   # may warn "No source fil
 uv run pytest --collect-only 2>&1 | head -3
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pyproject.toml
@@ -213,7 +213,7 @@ git commit -m "chore: ruff/mypy/pytest config per spec §3.2"
 - Create: `tests/fixtures/.gitkeep`
 - Create: `spikes/.gitkeep`
 
-- [ ] **Step 1: Create empty packages**
+- [x] **Step 1: Create empty packages**
 
 ```bash
 mkdir -p src/markr/{api,ingestion,aggregation,db} tests/fixtures spikes
@@ -222,7 +222,7 @@ touch src/markr/__init__.py src/markr/api/__init__.py src/markr/ingestion/__init
       tests/__init__.py tests/fixtures/.gitkeep spikes/.gitkeep
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add src tests spikes
