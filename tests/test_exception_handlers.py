@@ -34,9 +34,7 @@ def app() -> FastAPI:
 
 @pytest.mark.asyncio
 async def test_markr_handler(app: FastAPI) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t"
-    ) as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/markr")
 
     assert r.status_code == 422
@@ -45,9 +43,7 @@ async def test_markr_handler(app: FastAPI) -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_route_404(app: FastAPI) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t"
-    ) as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/nope")
 
     assert r.status_code == 404
@@ -58,9 +54,7 @@ async def test_unknown_route_404(app: FastAPI) -> None:
 
 @pytest.mark.asyncio
 async def test_method_not_allowed(app: FastAPI) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t"
-    ) as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/markr")
 
     assert r.status_code == 405
@@ -69,9 +63,7 @@ async def test_method_not_allowed(app: FastAPI) -> None:
 
 @pytest.mark.asyncio
 async def test_unhandled_framework_http_exception_maps_to_500(app: FastAPI) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t"
-    ) as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/teapot")
 
     assert r.status_code == 500
@@ -80,9 +72,7 @@ async def test_unhandled_framework_http_exception_maps_to_500(app: FastAPI) -> N
 
 @pytest.mark.asyncio
 async def test_request_validation(app: FastAPI) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t"
-    ) as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/p/toolong")
 
     assert r.status_code == 422

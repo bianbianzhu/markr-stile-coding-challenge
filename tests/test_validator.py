@@ -150,7 +150,9 @@ def test_duplicate_summary_marks_rejected():
 
 
 def test_missing_summary_marks_rejected():
-    xml = "<mcq-test-result><student-number>1</student-number><test-id>1</test-id></mcq-test-result>"
+    xml = (
+        "<mcq-test-result><student-number>1</student-number><test-id>1</test-id></mcq-test-result>"
+    )
     with pytest.raises(MarkrHTTPException) as ei:
         validate_record(parse(xml))
     assert ei.value.status_code == 422

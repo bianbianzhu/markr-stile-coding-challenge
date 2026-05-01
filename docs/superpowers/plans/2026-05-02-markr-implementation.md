@@ -3516,7 +3516,7 @@ git commit --allow-empty -m "test(e2e): replay idempotency after restart verifie
 
 **Spec:** §3, §3.1, §3.2
 
-- [ ] **Step 1: Run all gates**
+- [x] **Step 1: Run all gates**
 
 ```bash
 uv run ruff check .
@@ -3525,13 +3525,13 @@ uv run mypy src/markr
 uv run pytest -v
 ```
 
-- [ ] **Step 2: Fix anything that fires**
+- [x] **Step 2: Fix anything that fires**
 
 For mypy specifically:
 - Ensure `Repository.aggregate` returns `AggregateStats | None` and `AggregateStats.*` stat fields are non-Optional `float` (spec §3.1).
 - Ensure `safe_parse` returns stdlib `Element` (spec §3.1).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git commit -am "chore: ruff + mypy strict clean across src/markr"

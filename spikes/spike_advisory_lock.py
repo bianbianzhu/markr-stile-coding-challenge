@@ -6,11 +6,13 @@ from testcontainers.postgres import PostgresContainer
 DDL = "CREATE TABLE IF NOT EXISTS test_results (k TEXT PRIMARY KEY)"
 KEY = 0x4D41524B
 
+
 async def boot(engine, label):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": KEY})
         await conn.execute(text(DDL))
         print(f"{label} done")
+
 
 async def main():
     with PostgresContainer("postgres:16-alpine", driver="asyncpg") as pg:
@@ -20,5 +22,6 @@ async def main():
             res = await conn.execute(text("SELECT to_regclass('test_results')"))
             print("table:", res.scalar())
         await engine.dispose()
+
 
 asyncio.run(main())

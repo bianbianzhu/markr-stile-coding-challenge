@@ -33,9 +33,7 @@ async def test_health_db_down_503() -> None:
     register_exception_handlers(app)
     app.include_router(build_ops_router(engine))
 
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t"
-    ) as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/health")
 
     assert r.status_code == 503
