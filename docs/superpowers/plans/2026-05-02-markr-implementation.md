@@ -1623,7 +1623,7 @@ git commit -m "build: two-layer Dockerfile per spec §12.1"
 - Create: `.dockerignore`
 - Create: `docker-compose.yml`
 
-- [ ] **Step 1: .dockerignore (spec §12.2)**
+- [x] **Step 1: .dockerignore (spec §12.2)**
 
 ```
 .git
@@ -1640,7 +1640,7 @@ specs/
 *.md
 ```
 
-- [ ] **Step 2: docker-compose.yml (spec §12.3, verbatim)**
+- [x] **Step 2: docker-compose.yml (spec §12.3, verbatim)**
 
 ```yaml
 services:
@@ -1672,7 +1672,7 @@ volumes:
   markr_pgdata:
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .dockerignore docker-compose.yml

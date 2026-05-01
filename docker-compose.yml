@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: markr
+      POSTGRES_PASSWORD: markr
+      POSTGRES_DB: markr
+    volumes:
+      - markr_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U markr -d markr"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  app:
+    build: .
+    ports:
+      - "4567:4567"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://markr:markr@db:5432/markr
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  markr_pgdata:
