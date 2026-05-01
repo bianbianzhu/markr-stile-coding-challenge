@@ -827,7 +827,7 @@ Key decisions and where they were settled:
 | Service topology                  | Single service, Level 1 (logical decoupling)   | 7.4                       |
 | Language / framework              | Python + FastAPI                               | (default chosen up front) |
 | Database                          | Postgres                                       | 3                         |
-| XML parsing                       | DOM-style, no element-order assumptions        | 4.6, 5                    |
+| XML parsing                       | DOM + `defusedxml`, order-independent          | 4.6, 5                    |
 | Validation                        | All-or-nothing, before any DB write            | 4.4, 6, 7.4, 8            |
 | Transaction boundary              | One per HTTP request                           | 4.4, 6, 7.4, 8            |
 | Dedup within a request            | Application-layer, max() per `(student, test)` | 7                         |
@@ -839,7 +839,7 @@ Key decisions and where they were settled:
 | Reject wrong document type        | Check root element is `mcq-test-results`       | 4.3                       |
 | Lenient parsing of unknown fields | Yes — ignore extras                            | 4.2                       |
 | `<answer>` elements               | Ignore entirely; trust `<summary-marks>`       | 4.1                       |
-| Body / record-count limits        | Cap request size; return 413 if exceeded       | 5.5                       |
+| Body / record-count limits        | 10 MB body + 10k records; 413 if exceeded      | 5.5                       |
 | Aggregate computation             | Postgres `PERCENTILE_CONT`, percentages        | 3, 4.10                   |
 
 ---
