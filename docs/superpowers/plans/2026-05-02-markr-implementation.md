@@ -2589,7 +2589,7 @@ git commit -m "feat: content-type guard (spec §5.4)"
 - Create: `src/markr/ingestion/pipeline.py`
 - Create: `tests/test_pipeline.py`
 
-- [ ] **Step 1: Failing test (covers strict order short-circuit)**
+- [x] **Step 1: Failing test (covers strict order short-circuit)**
 
 ```python
 # tests/test_pipeline.py
@@ -2651,7 +2651,7 @@ async def test_dedup_then_upsert(engine):
     assert rows[0]["marks_obtained"] == 13
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/ingestion/pipeline.py
@@ -2679,7 +2679,7 @@ async def process_xml_body(body: bytes, repo: Repository) -> None:
     await repo.upsert(deduped)
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_pipeline.py -v
