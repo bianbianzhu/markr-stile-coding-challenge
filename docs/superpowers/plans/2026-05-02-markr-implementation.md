@@ -3602,7 +3602,7 @@ git commit -m "docs: deliverable README (spec §15) — brief preserved at docs/
 
 ### Task 13.2: Final smoke run
 
-- [ ] **Step 1: Cold-start the system from scratch**
+- [x] **Step 1: Cold-start the system from scratch**
 
 ```bash
 docker compose down -v
@@ -3610,7 +3610,7 @@ docker compose up --build -d
 sleep 8
 ```
 
-- [ ] **Step 2: Reviewer-quick-reference commands (spec §16)**
+- [x] **Step 2: Reviewer-quick-reference commands (spec §16)**
 
 ```bash
 curl -sS http://localhost:4567/health
@@ -3621,13 +3621,13 @@ docker compose down
 
 Each must return the expected status / payload from prior E2E checkpoints.
 
-- [ ] **Step 3: Lint/type/test sweep one more time**
+- [x] **Step 3: Lint/type/test sweep one more time**
 
 ```bash
 uv run ruff check . && uv run ruff format --check . && uv run mypy src/markr && uv run pytest
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git commit --allow-empty -m "chore: final smoke + lint/type/test sweep clean"
