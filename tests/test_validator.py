@@ -149,6 +149,16 @@ def test_duplicate_summary_marks_rejected():
     assert ei.value.details.get("field") == "summary-marks"
 
 
+def test_missing_summary_marks_rejected():
+    xml = "<mcq-test-result><student-number>1</student-number><test-id>1</test-id></mcq-test-result>"
+    with pytest.raises(MarkrHTTPException) as ei:
+        validate_record(parse(xml))
+    assert ei.value.status_code == 422
+    assert ei.value.error == "cardinality_violation"
+    assert ei.value.details.get("field") == "summary-marks"
+    assert ei.value.details.get("count") == 0
+
+
 def test_optional_first_last_multiple_values_last_non_empty_wins():
     xml = (
         "<mcq-test-result><first-name>A</first-name><first-name> </first-name>"

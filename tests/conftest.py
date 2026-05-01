@@ -18,7 +18,6 @@ def db_url() -> Iterator[str]:
         yield env_url
         return
 
-    os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
     with PostgresContainer("postgres:16-alpine", driver="asyncpg") as pg:
         yield pg.get_connection_url()
 

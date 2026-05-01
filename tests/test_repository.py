@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from markr.db.repository import AggregateStats, Repository
 from markr.ingestion.validator import RawRecord
@@ -84,6 +85,21 @@ async def test_chunking_with_250_rows(engine):
 
     assert stats is not None
     assert stats.count == 250
+
+
+@pytest.mark.asyncio
+async def test_upsert_rolls_back_all_chunks_on_later_chunk_failure(engine):
+    repo = Repository(engine, engine, chunk_size=1)
+    records = [
+        _r("T", "1", 20, 10),
+        _r("T", "2", 10, 11),
+    ]
+
+    with pytest.raises(IntegrityError):
+        await repo.upsert(records)
+
+    assert await repo.debug_select("T") == []
+    assert await repo.aggregate("T") is None
 
 
 @pytest.mark.asyncio
