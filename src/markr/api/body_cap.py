@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable, MutableMapping
+from typing import Any, Awaitable, Callable, Iterable, MutableMapping, cast
 
 BODY_LIMIT_BYTES = 10 * 1024 * 1024
 REQUIRED_CT = "text/xml+markr"
@@ -20,7 +20,8 @@ class _BodyTooLarge(Exception):
 
 
 def _header(scope: Scope, name: bytes) -> bytes | None:
-    for key, value in scope.get("headers", []):
+    headers = cast(Iterable[tuple[bytes, bytes]], scope.get("headers", ()))
+    for key, value in headers:
         if key == name:
             return value
     return None
