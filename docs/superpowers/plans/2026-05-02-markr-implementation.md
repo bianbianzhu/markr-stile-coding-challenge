@@ -1187,7 +1187,7 @@ git commit -m "feat: MarkrHTTPException carrier (spec §9.4)"
 - Create: `src/markr/api/exception_handlers.py`
 - Create: `tests/test_exception_handlers.py`
 
-- [ ] **Step 1: Failing test (covers all four handlers)**
+- [x] **Step 1: Failing test (covers all four handlers)**
 
 ```python
 # tests/test_exception_handlers.py
@@ -1264,7 +1264,7 @@ async def test_unhandled_exception_500(app):
         assert r.json()["error"] == "internal_error"
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```python
 # src/markr/api/exception_handlers.py
@@ -1329,7 +1329,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 ```
 
-- [ ] **Step 3: Pass + commit**
+- [x] **Step 3: Pass + commit**
 
 ```bash
 uv run pytest tests/test_exception_handlers.py -v
