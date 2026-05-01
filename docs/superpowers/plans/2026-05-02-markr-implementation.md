@@ -1013,7 +1013,7 @@ git commit -m "feat: schema.sql with CHECKs per spec §7.1; ship in wheel via ha
 - Create: `src/markr/config.py`
 - Create: `tests/test_config.py`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 ```python
 # tests/test_config.py
@@ -1038,9 +1038,9 @@ def test_missing_database_url_raises(monkeypatch):
         cfg.Settings()
 ```
 
-- [ ] **Step 2: Run — fails**
+- [x] **Step 2: Run — fails**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # src/markr/config.py
@@ -1058,9 +1058,9 @@ class Settings(BaseSettings):
     READ_POOL_OVERFLOW: int = 10
 ```
 
-- [ ] **Step 4: Run — passes**
+- [x] **Step 4: Run — passes**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/markr/config.py tests/test_config.py
