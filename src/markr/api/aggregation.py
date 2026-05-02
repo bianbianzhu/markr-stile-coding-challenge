@@ -45,15 +45,6 @@ def build_aggregation_router(repo: Repository) -> APIRouter:
                 details={"reason": "no_matching_rows", "test_id": trimmed},
             )
 
-        return AggregateResponse(
-            mean=stats.mean,
-            stddev=stats.stddev,
-            min=stats.min,
-            max=stats.max,
-            p25=stats.p25,
-            p50=stats.p50,
-            p75=stats.p75,
-            count=stats.count,
-        )
+        return AggregateResponse.model_validate(stats, from_attributes=True)
 
     return router
