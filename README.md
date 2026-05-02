@@ -12,7 +12,11 @@ Prerequisites: Docker Compose v2, Docker running, and host port `4567` free.
 
 ```bash
 docker compose up --build -d
-until curl -fsS http://localhost:4567/health >/dev/null 2>&1; do sleep 1; done
+for i in $(seq 1 30); do
+  curl -fsS http://localhost:4567/health >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsS http://localhost:4567/health
 ```
 
 POST one batch:
@@ -42,6 +46,40 @@ Expected shape for the example above:
 ```json
 {"mean":65.0,"stddev":0.0,"min":65.0,"max":65.0,"p25":65.0,"p50":65.0,"p75":65.0,"count":1}
 ```
+
+Load the provided sample data:
+
+```bash
+curl -sS -X POST -H 'Content-Type: text/xml+markr' \
+  --data-binary @sample_results.xml http://localhost:4567/import
+
+curl -sS http://localhost:4567/results/9863/aggregate
+```
+
+`9863` is the `test-id` in `sample_results.xml`. The sample has 100 records, but 81 stored student/test rows after duplicate handling.
+
+Stop without deleting data:
+
+```bash
+docker compose down
+```
+
+Stop and wipe the Postgres volume:
+
+```bash
+docker compose down -v
+```
+
+## Approach
+
+FastAPI exposes the two product endpoints from the brief and stores results in Postgres. `POST /import` parses XML with `defusedxml`, validates the whole batch, deduplicates by `(test_id, student_number)`, then writes with one transactional UPSERT path. `GET /results/{test_id}/aggregate` computes percentage stats in SQL, including `PERCENTILE_CONT`.
+
+## Things worth noting
+
+- Imports are atomic: any invalid record rejects the whole XML document before persistence.
+- Duplicate scans keep the highest obtained and available marks, both within one request and across repeated requests.
+- `<summary-marks>` is trusted and `<answer>` elements are ignored, per the brief.
+- `student-number` and `test-id` are stored as text so leading zeros are preserved.
 
 ## Assumptions
 
@@ -129,6 +167,8 @@ If real-time dashboards become a product requirement, publish events only after 
 
 ## Running tests
 
+Install `uv` first if needed: https://docs.astral.sh/uv/
+
 ```bash
 uv sync && uv run pytest
 ```
@@ -139,13 +179,21 @@ Coverage:
 uv run pytest --cov=src/markr --cov-report=term-missing
 ```
 
-Tests use testcontainers and require Docker. To run against an existing database:
+Tests use testcontainers and require Docker. On a cold Docker Desktop start, the first testcontainers run can occasionally fail while Ryuk starts. Rerun the command, or use `TEST_DATABASE_URL` to run against a disposable existing Postgres database.
 
-On a cold Docker Desktop start, the first testcontainers run can occasionally fail while Ryuk starts. Rerun the command, or use `TEST_DATABASE_URL` to run against an existing Postgres database.
+Do not point `TEST_DATABASE_URL` at shared or production data. Tests drop and recreate the `test_results` table.
 
 ```bash
 TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/markr uv run pytest
 ```
+
+## Troubleshooting
+
+- `port is already allocated`: stop the process using host port `4567`, or change the compose port mapping.
+- Docker connection errors: start Docker Desktop, then rerun `docker compose up --build -d`.
+- Startup stalls: run `docker compose ps` and `docker compose logs -f app`.
+- Build cannot fetch `ghcr.io/astral-sh/uv`: check network/proxy access to GHCR.
+- Testcontainers/Ryuk fails on first run: rerun `uv run pytest`, or use a disposable `TEST_DATABASE_URL`.
 
 ## Commands appendix
 
@@ -155,5 +203,6 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy src/markr
 uv run pytest
+docker compose down
 docker compose down -v
 ```
