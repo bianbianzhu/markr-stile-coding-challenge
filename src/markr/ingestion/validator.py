@@ -64,7 +64,13 @@ def validate_record(record: Element) -> RawRecord:
             )
 
     summary = record.find("summary-marks")
-    assert summary is not None
+    if summary is None:
+        raise MarkrHTTPException(
+            status_code=422,
+            error="cardinality_violation",
+            message="required field 'summary-marks' appeared 0 times",
+            details={"field": "summary-marks", "count": 0},
+        )
     available_raw = _trim(summary.get("available"))
     obtained_raw = _trim(summary.get("obtained"))
     try:
