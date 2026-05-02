@@ -593,7 +593,7 @@ Four handlers are registered on the FastAPI app to ensure every non-2xx response
    - `404 → not_found` with `details: {"reason": "unknown_route"}`
    - `405 → method_not_allowed`
    - other statuses → `internal_error` (logged as a programming bug — every spec'd application raise-site should have used `MarkrHTTPException`).
-3. **`RequestValidationError`** (FastAPI's auto-generated 422 from Path/Query/Body validators — fired e.g. when `test_id` exceeds 256 chars before our `.strip()` runs) → emit `{error: "invalid_path_param", message: "request validation failed", details: {<field>: [...]}}`.
+3. **`RequestValidationError`** (FastAPI's auto-generated 422 from Path/Query/Body validators — fired e.g. when `test_id` exceeds 256 chars before our `.strip()` runs) → emit `{error: "invalid_path_param", message: "request validation failed", details: {"errors": exc.errors()}}`. This keeps FastAPI's native validation payload, including `loc`, so clients can still identify the failing field without a custom reshaping layer.
 4. **`Exception`** (catch-all) → 500 `{error: "internal_error", message: "internal server error"}`. Stack trace is logged server-side only.
 
 After these four handlers, every non-2xx response in the system uses the §9.1 envelope.
