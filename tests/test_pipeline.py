@@ -76,3 +76,33 @@ async def test_dedup_then_upsert_one_row_with_highest_score(engine):
     rows = await repo.debug_select("T")
     assert len(rows) == 1
     assert rows[0]["marks_obtained"] == 13
+
+
+@pytest.mark.asyncio
+async def test_multiple_test_ids_in_one_batch_do_not_pollute_each_other(engine):
+    repo = Repository(engine, engine)
+    body = make(
+        """
+        <mcq-test-result>
+          <student-number>1</student-number>
+          <test-id>A</test-id>
+          <summary-marks available="20" obtained="10"/>
+        </mcq-test-result>
+        <mcq-test-result>
+          <student-number>1</student-number>
+          <test-id>B</test-id>
+          <summary-marks available="20" obtained="15"/>
+        </mcq-test-result>
+        """
+    )
+
+    await process_xml_body(body, repo)
+
+    a = await repo.aggregate("A")
+    b = await repo.aggregate("B")
+    assert a is not None
+    assert b is not None
+    assert a.count == 1
+    assert b.count == 1
+    assert a.mean == pytest.approx(50.0, rel=1e-9)
+    assert b.mean == pytest.approx(75.0, rel=1e-9)

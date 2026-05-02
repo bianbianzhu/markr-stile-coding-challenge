@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
@@ -57,6 +58,39 @@ async def test_upsert_idempotent_greatest_across_multiple_upserts(engine):
     assert stats is not None
     assert stats.count == 1
     assert stats.mean == pytest.approx(65.0, rel=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_upsert_greatest_available_across_multiple_upserts(engine):
+    repo = Repository(engine, engine)
+
+    await repo.upsert([_r("T", "1", 20, 10)])
+    await repo.upsert([_r("T", "1", 40, 12)])
+
+    rows = await repo.debug_select("T")
+    stats = await repo.aggregate("T")
+
+    assert rows[0]["marks_available"] == 40
+    assert rows[0]["marks_obtained"] == 12
+    assert stats is not None
+    assert stats.mean == pytest.approx(30.0, rel=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_key_upserts_keep_highest_values(engine):
+    repo = Repository(engine, engine)
+
+    await asyncio.gather(
+        repo.upsert([_r("T", "1", 20, 11)]),
+        repo.upsert([_r("T", "1", 20, 13)]),
+        repo.upsert([_r("T", "1", 30, 12)]),
+    )
+
+    rows = await repo.debug_select("T")
+
+    assert len(rows) == 1
+    assert rows[0]["marks_obtained"] == 13
+    assert rows[0]["marks_available"] == 30
 
 
 @pytest.mark.asyncio

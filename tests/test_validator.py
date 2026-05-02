@@ -76,6 +76,7 @@ def test_required_field_failures(xml: str, err: str, field: str):
         ("0", "0"),
         ("-3", "1"),
         ("10", "11"),
+        ("10", "-1"),
         ("twenty", "1"),
         ("10", "1.5"),
     ],
@@ -106,6 +107,15 @@ def test_scanned_on_empty_string_becomes_none():
         "<summary-marks available='10' obtained='5'/></mcq-test-result>"
     )
     assert validate_record(parse(xml)).scanned_on is None
+
+
+def test_scanned_on_without_timezone_parses_as_naive_datetime():
+    xml = (
+        "<mcq-test-result scanned-on='2017-12-04T12:12:10'>"
+        "<student-number>1</student-number><test-id>1</test-id>"
+        "<summary-marks available='10' obtained='5'/></mcq-test-result>"
+    )
+    assert validate_record(parse(xml)).scanned_on == datetime(2017, 12, 4, 12, 12, 10)
 
 
 def test_empty_optional_first_name_becomes_none():
@@ -147,6 +157,19 @@ def test_duplicate_summary_marks_rejected():
         validate_record(parse(xml))
     assert ei.value.error == "cardinality_violation"
     assert ei.value.details.get("field") == "summary-marks"
+
+
+def test_duplicate_test_id_rejected():
+    xml = (
+        "<mcq-test-result><student-number>1</student-number>"
+        "<test-id>1</test-id><test-id>2</test-id>"
+        "<summary-marks available='1' obtained='1'/></mcq-test-result>"
+    )
+    with pytest.raises(MarkrHTTPException) as ei:
+        validate_record(parse(xml))
+    assert ei.value.error == "cardinality_violation"
+    assert ei.value.details.get("field") == "test-id"
+    assert ei.value.details.get("count") == 2
 
 
 def test_missing_summary_marks_rejected():
