@@ -121,6 +121,20 @@ Duplicate records inside one request are reduced in app code before writing, usi
 
 Aggregate percentages are computed per stored student row: `marks_obtained / marks_available * 100`, then aggregated. If duplicate scans disagree on available marks, the row stores the highest available value for that student/test key before calculating the percentage.
 
+**Known issue: duplicate available-mark semantics.**
+
+The implementation follows the brief literally: if the same student's submission appears twice, keep the highest awarded marks and do the same for available marks. This is honest brief compliance, not an accidental code path.
+
+In a real grading system, this rule is questionable. `marks_obtained` and `marks_available` form one score measurement, not two independent facts. Combining the highest obtained value from one scan with the highest available value from another can synthesize a percentage no scan ever reported:
+
+```text
+Scan A: 9/10 = 90%
+Scan B: 8/20 = 40%
+Stored: 9/20 = 45%
+```
+
+That may be exactly what the brief asks for, but it is a risky product rule. A production system should validate this with stakeholders. Likely alternatives are: require `available` to be invariant for a `test-id`, keep a whole best scan rather than merging fields independently, or introduce explicit test metadata so scanner-reported available marks are checked against the known marking scheme.
+
 `summary-marks` values are interpreted as whole-number marks, matching the brief examples and sample data. Decimal values such as `10.5` are rejected with `422 invalid_score`.
 
 `stddev` is population standard deviation (`STDDEV_POP`). That makes a single-row aggregate return `0.0`, matching the brief example.
@@ -164,6 +178,7 @@ If real-time dashboards become a product requirement, publish events only after 
 - **Observability matters**: add structured logging, request IDs, OpenTelemetry tracing on parse / validate / upsert phases, Prometheus metrics on rejection rate, batch size distribution, end-to-end latency.
 - **Schema evolves**: introduce Alembic migrations.
 - **Test-id metadata becomes useful**: separate `tests` table referenced by foreign key.
+- **Duplicate available-mark rule is validated with stakeholders**: revisit the brief's "do the same with available marks" instruction. The current literal implementation can synthesize scores across scans; a production rule may need available-mark invariance, whole-scan selection, or explicit test metadata.
 
 ## Running tests
 
