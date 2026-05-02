@@ -91,6 +91,16 @@ def test_invalid_score_cases(available: str, obtained: str):
     assert ei.value.error == "invalid_score"
 
 
+def test_score_above_db_int_range_rejected():
+    xml = (
+        "<mcq-test-result><student-number>1</student-number><test-id>1</test-id>"
+        "<summary-marks available='2147483648' obtained='1'/></mcq-test-result>"
+    )
+    with pytest.raises(MarkrHTTPException) as ei:
+        validate_record(parse(xml))
+    assert ei.value.error == "invalid_score"
+
+
 def test_scanned_on_unparseable_becomes_none():
     xml = (
         "<mcq-test-result scanned-on='not-a-date'>"

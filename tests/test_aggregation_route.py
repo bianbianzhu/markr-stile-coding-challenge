@@ -57,6 +57,17 @@ async def test_aggregate_path_whitespace_invalid(app):
 
 
 @pytest.mark.asyncio
+async def test_aggregate_path_nul_invalid(app):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        response = await c.get("/results/x%00/aggregate")
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["error"] == "invalid_path_param"
+    assert body["details"]["field"] == "test_id"
+
+
+@pytest.mark.asyncio
 async def test_aggregate_path_too_long(app):
     long = "x" * 257
 

@@ -35,6 +35,13 @@ def build_aggregation_router(repo: Repository) -> APIRouter:
                 message="test_id is empty after trim",
                 details={"field": "test_id"},
             )
+        if "\x00" in trimmed:
+            raise MarkrHTTPException(
+                status_code=422,
+                error="invalid_path_param",
+                message="test_id contains NUL",
+                details={"field": "test_id"},
+            )
 
         stats = await repo.aggregate(trimmed)
         if stats is None:

@@ -8,6 +8,7 @@ from markr.api.errors import MarkrHTTPException
 
 REQUIRED_FIELDS = ("student-number", "test-id", "summary-marks")
 MAX_TEXT_LEN = 256
+MAX_DB_INT = 2_147_483_647
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,17 @@ def validate_record(record: Element) -> RawRecord:
             error="invalid_score",
             message="available must be > 0",
             details={"available": marks_available},
+        )
+    if marks_available > MAX_DB_INT or marks_obtained > MAX_DB_INT:
+        raise MarkrHTTPException(
+            status_code=422,
+            error="invalid_score",
+            message="available/obtained must fit Postgres INT",
+            details={
+                "available": marks_available,
+                "obtained": marks_obtained,
+                "max": MAX_DB_INT,
+            },
         )
     if marks_obtained < 0:
         raise MarkrHTTPException(

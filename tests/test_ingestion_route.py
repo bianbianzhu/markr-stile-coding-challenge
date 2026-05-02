@@ -65,6 +65,26 @@ async def test_post_malformed(app):
 
 
 @pytest.mark.asyncio
+async def test_post_score_above_db_int_range_returns_422(app):
+    body = b"""<mcq-test-results>
+      <mcq-test-result>
+        <student-number>1</student-number><test-id>T</test-id>
+        <summary-marks available="2147483648" obtained="1"/>
+      </mcq-test-result>
+    </mcq-test-results>"""
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        response = await c.post(
+            "/import",
+            content=body,
+            headers={"content-type": "text/xml+markr"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "invalid_score"
+
+
+@pytest.mark.asyncio
 async def test_wrong_method(app):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         response = await c.put("/import", content=b"x")
