@@ -2,8 +2,11 @@
 
 ## Quick start
 
+Prerequisites: Docker Compose v2, Docker running, and host port `4567` free.
+
 ```bash
-docker compose up --build
+docker compose up --build -d
+until curl -fsS http://localhost:4567/health >/dev/null 2>&1; do sleep 1; done
 ```
 
 POST one batch:
@@ -71,6 +74,12 @@ XML is parsed as a hardened DOM with `defusedxml`, not streamed. The 10 MiB body
 The service trusts `<summary-marks>` and ignores `<answer>` elements because the brief explicitly directs that trade-off.
 
 Duplicate records inside one request are reduced in app code before writing, using the highest obtained and available marks per `(test_id, student_number)`. Cross-request duplicates are handled by database UPSERT.
+
+Aggregate percentages are computed per stored student row: `marks_obtained / marks_available * 100`, then aggregated. If duplicate scans disagree on available marks, the row stores the highest available value for that student/test key before calculating the percentage.
+
+`summary-marks` values are interpreted as whole-number marks, matching the brief examples and sample data. Decimal values such as `10.5` are rejected with `422 invalid_score`.
+
+`stddev` is population standard deviation (`STDDEV_POP`). That makes a single-row aggregate return `0.0`, matching the brief example.
 
 An empty batch returns 422 `empty_batch`. The brief is silent on zero-record documents; rejecting loudly is safer than accepting a silent no-op.
 
