@@ -1,19 +1,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable, Iterable, MutableMapping, cast
+from typing import Iterable, cast
+
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 BODY_LIMIT_BYTES = 10 * 1024 * 1024
 REQUIRED_CT = "text/xml+markr"
 GATED_PATH = "/import"
 GATED_METHOD = "POST"
-
-Scope = MutableMapping[str, Any]
-Message = MutableMapping[str, Any]
-Receive = Callable[[], Awaitable[Message]]
-Send = Callable[[Message], Awaitable[None]]
-ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
-
 
 class _BodyTooLarge(Exception):
     pass
