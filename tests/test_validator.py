@@ -156,7 +156,9 @@ def test_duplicate_summary_marks_rejected():
     with pytest.raises(MarkrHTTPException) as ei:
         validate_record(parse(xml))
     assert ei.value.error == "cardinality_violation"
+    assert ei.value.message == "required field 'summary-marks' appeared 2 times"
     assert ei.value.details.get("field") == "summary-marks"
+    assert ei.value.details.get("count") == 2
 
 
 def test_duplicate_test_id_rejected():
@@ -180,6 +182,7 @@ def test_missing_summary_marks_rejected():
         validate_record(parse(xml))
     assert ei.value.status_code == 422
     assert ei.value.error == "cardinality_violation"
+    assert ei.value.message == "required field 'summary-marks' appeared 0 times"
     assert ei.value.details.get("field") == "summary-marks"
     assert ei.value.details.get("count") == 0
 

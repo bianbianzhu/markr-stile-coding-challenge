@@ -6,7 +6,7 @@ from xml.etree.ElementTree import Element
 
 from markr.api.errors import MarkrHTTPException
 
-REQUIRED_TEXT_FIELDS = ("student-number", "test-id")
+REQUIRED_FIELDS = ("student-number", "test-id", "summary-marks")
 MAX_TEXT_LEN = 256
 
 
@@ -35,7 +35,7 @@ def _optional_last_non_empty(record: Element, tag: str) -> str | None:
 
 
 def validate_record(record: Element) -> RawRecord:
-    for field in REQUIRED_TEXT_FIELDS:
+    for field in REQUIRED_FIELDS:
         count = len(record.findall(field))
         if count != 1:
             raise MarkrHTTPException(
@@ -44,15 +44,6 @@ def validate_record(record: Element) -> RawRecord:
                 message=f"required field {field!r} appeared {count} times",
                 details={"field": field, "count": count},
             )
-
-    summary_count = len(record.findall("summary-marks"))
-    if summary_count != 1:
-        raise MarkrHTTPException(
-            status_code=422,
-            error="cardinality_violation",
-            message=f"required field 'summary-marks' appeared {summary_count} times",
-            details={"field": "summary-marks", "count": summary_count},
-        )
 
     student_number = _trim(record.findtext("student-number"))
     test_id = _trim(record.findtext("test-id"))
