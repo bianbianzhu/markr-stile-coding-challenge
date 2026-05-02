@@ -118,6 +118,12 @@ If real-time dashboards become a product requirement, publish events only after 
 uv sync && uv run pytest
 ```
 
+Coverage:
+
+```bash
+uv run pytest --cov=src/markr --cov-report=term-missing
+```
+
 Tests use testcontainers and require Docker. To run against an existing database:
 
 ```bash
