@@ -1,5 +1,11 @@
 # Markr
 
+## Implementation notes 
+
+**Detailed design notes and decision history** - `THOUGHT_PROCESS_WITH_CLAUDE.md` (my journal).
+**Authoritative spec** — `specs/2026-05-02-markr-design.md` (primary source of truth)
+**Implementation plan** - `docs/superpowers/plans/2026-05-02-markr-implementation.md` (AI-powered SDLC)
+
 ## Quick start
 
 Prerequisites: Docker Compose v2, Docker running, and host port `4567` free.
@@ -134,6 +140,8 @@ uv run pytest --cov=src/markr --cov-report=term-missing
 ```
 
 Tests use testcontainers and require Docker. To run against an existing database:
+
+On a cold Docker Desktop start, the first testcontainers run can occasionally fail while Ryuk starts. Rerun the command, or use `TEST_DATABASE_URL` to run against an existing Postgres database.
 
 ```bash
 TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/markr uv run pytest
