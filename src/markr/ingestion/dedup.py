@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 from markr.ingestion.validator import RawRecord
 
@@ -14,9 +15,8 @@ def dedup(records: Iterable[RawRecord]) -> list[RawRecord]:
             by_key[key] = record
             continue
 
-        by_key[key] = RawRecord(
-            test_id=record.test_id,
-            student_number=record.student_number,
+        by_key[key] = replace(
+            previous,
             marks_available=max(previous.marks_available, record.marks_available),
             marks_obtained=max(previous.marks_obtained, record.marks_obtained),
             first_name=record.first_name if record.first_name is not None else previous.first_name,
