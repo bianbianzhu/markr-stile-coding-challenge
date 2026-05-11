@@ -47,7 +47,7 @@ SELECT
   PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY pct) AS p75,
   COUNT(*)                                          AS count
 FROM (
-  SELECT marks_obtained::float / marks_available * 100 AS pct
+  SELECT marks_obtained::float / MAX(marks_available) OVER () * 100 AS pct
   FROM test_results
   WHERE test_id = :test_id
 ) t

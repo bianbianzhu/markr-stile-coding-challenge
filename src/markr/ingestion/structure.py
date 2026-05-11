@@ -27,10 +27,4 @@ def gate_root_and_count(root: Element) -> list[Element]:
             message=f"batch contains {count} records (limit {MAX_RECORDS})",
             details={"count": count, "limit": MAX_RECORDS},
         )
-    if count == 0:
-        raise MarkrHTTPException(
-            status_code=422,
-            error="empty_batch",
-            message="document contains zero records",
-        )
     return records

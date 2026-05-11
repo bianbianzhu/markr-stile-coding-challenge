@@ -139,7 +139,7 @@ That may be exactly what the brief asks for, but it is a risky product rule. A p
 
 `stddev` is population standard deviation (`STDDEV_POP`). That makes a single-row aggregate return `0.0`, matching the brief example.
 
-An empty batch returns 422 `empty_batch`. The brief is silent on zero-record documents; rejecting loudly is safer than accepting a silent no-op.
+An empty batch (`<mcq-test-results></mcq-test-results>`) returns 200 `{"status": "ok"}` as a no-op. The document is well-formed and has nothing to persist; the brief is silent on the case and rejecting it as 422 surprised callers more than it helped.
 
 Aggregate stats are not rounded in application code. PostgreSQL returns the numeric result and the response preserves that value.
 

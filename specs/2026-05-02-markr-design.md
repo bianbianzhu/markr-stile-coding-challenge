@@ -199,7 +199,7 @@ content-type check (415)
       → root check (422)
         → record count check
             · count > 10_000 → 413 record_count_exceeded
-            · count == 0     → 422 empty_batch
+            · count == 0     → 200 {"status": "ok"} (no-op success)
           → validate every raw record individually (422)
             → dedup (max obtained / max available per (test_id, student_number))
               → BEGIN tx
@@ -265,11 +265,9 @@ if len(records) > 10_000:
     raise MarkrHTTPException(413, "record_count_exceeded",
                               f"batch contains {len(records)} records (limit 10000)",
                               {"count": len(records), "limit": 10_000})
-if len(records) == 0:
-    raise MarkrHTTPException(422, "empty_batch", "document contains zero records")
 ```
 
-`> 10000` rejects; exactly 10000 is allowed. Zero records → 422 `empty_batch` (see §7.4); silent no-op accept would surprise operators and contradict the "missing important bits" spirit.
+`> 10000` rejects; exactly 10000 is allowed. Zero records → 200 `{"status": "ok"}` no-op (see §7.4): an empty batch is a vacuously valid submission and the brief is silent on the case, so we accept it rather than rejecting a well-formed document with nothing to do.
 
 **Validate every raw record individually (422)**
 
@@ -430,9 +428,9 @@ async with write_engine.begin() as conn:
 
 ### 7.4 Empty batch
 
-Zero `<mcq-test-result>` children inside `<mcq-test-results>` → 422 `empty_batch`. Silent no-op accept would surprise operators and contradicts the spirit of "missing important bits".
+Zero `<mcq-test-result>` children inside `<mcq-test-results>` → 200 `{"status": "ok"}` (no-op success). The document is well-formed and there is nothing to persist; the pipeline runs through validate (no-op), dedup (no-op), and `Repository.upsert([])` (early-return on empty input) without opening a transaction.
 
-This is a spec-level extension to the journal's Round 7.6 error policy table, which did not enumerate the zero-records case. The choice is intentional: silently 200-ing on empty input would mask scanner / network bugs.
+Earlier spec revisions returned 422 `empty_batch` here on the theory that silent acceptance would mask scanner bugs. That theory was overturned: the brief does not call empty batches an error, and rejecting a document that simply has nothing to do violates client expectations more than it catches bugs. Operators who care about scanner liveness should monitor record-count distributions, not depend on a 422 status as a side channel.
 
 ---
 
@@ -455,9 +453,11 @@ async def aggregate(
 
 ### 8.2 Aggregation interpretation
 
-`mean` is computed as `AVG(per-student percentage)` — the unweighted mean of one row per `(test_id, student_number)` after dedup. Each student contributes one data point regardless of how many times their paper was scanned. This is the natural reading of *"the mean of the awarded marks … expressed as percentages"*; the alternative (`SUM(obtained) / SUM(available) * 100`, weighted by per-student `available`) would give a different number when `available` differs across students for the same test. The brief's single-record example does not disambiguate the two readings; per-student average is chosen for clarity and reproducibility.
+`mean` is computed as `AVG(per-student percentage)` — the unweighted mean of one row per `(test_id, student_number)` after dedup. Each student contributes one data point regardless of how many times their paper was scanned.
 
-`stddev`, `min`, `max`, `p25`, `p50`, `p75` are likewise computed across the per-student percentages.
+**Denominator is `MAX(marks_available)` over all rows for the `test_id`**, not the row's own `marks_available`. Rationale: a folded paper hides bubbles, so the scanner under-reports `available` (and `obtained`) but never over-reports. `available` is therefore a test-level invariant; the highest observed value across any scan is the best estimate of the true value. The brief makes this explicit: *"You'll also need to do the same with the available marks **for the test**"*. `obtained`, by contrast, stays per-student — each student's max is applied at ingest via the §5.4 dedup + UPSERT `GREATEST` rule, with no cross-student max.
+
+`stddev`, `min`, `max`, `p25`, `p50`, `p75` are likewise computed across the per-student percentages and therefore share the same test-level denominator.
 
 ### 8.3 Query
 
@@ -472,7 +472,7 @@ SELECT
   PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY pct) AS p75,
   COUNT(*)                                          AS count
 FROM (
-  SELECT marks_obtained::float / marks_available * 100 AS pct
+  SELECT marks_obtained::float / MAX(marks_available) OVER () * 100 AS pct
   FROM test_results
   WHERE test_id = $1
 ) t;
@@ -538,7 +538,6 @@ All non-2xx responses return JSON:
 | 413 | `record_count_exceeded` | More than 10,000 `<mcq-test-result>` rows |
 | 415 | `unsupported_media_type` | `Content-Type` is not `text/xml+markr` |
 | 422 | `wrong_root` | XML well-formed but root element is not `<mcq-test-results>` (covers namespaced roots) |
-| 422 | `empty_batch` | Zero records inside `<mcq-test-results>` |
 | 422 | `cardinality_violation` | Required field appears `0` or `>1` times in a record. `details: {"field": "<name>", "count": <n>}` so consumers can distinguish missing-vs-duplicate without separate codes |
 | 422 | `invalid_score` | Non-integer, negative, `available <= 0`, or `obtained > available` |
 | 422 | `invalid_path_param` | GET aggregate `test_id` fails Path validation (length / format / empty after trim) |
@@ -811,6 +810,7 @@ App on port `4567` to match the brief's `curl` example.
 - Unknown XML elements are ignored without error. Per brief.
 - Documents whose root element is not `<mcq-test-results>` are rejected. Per brief's "other kinds of XML"; namespaced roots fall into this category.
 - `available > 0` and `obtained <= available` are enforced as validation rules and as DB CHECK constraints.
+- Scanner monotonicity: a folded paper hides bubbles, so the scanner can under-report `available` and `obtained` but never over-report. `available` is therefore a test-level invariant; `MAX(marks_available)` per `test_id` is used as the percentage denominator at aggregation time (§8.2 / §8.3).
 
 ---
 
@@ -820,7 +820,7 @@ The brief requires a README covering: assumptions and why; what's included and w
 
 1. **Quick start** — `docker compose up --build`, then the brief's `curl` example for POST and GET. One-page success path.
 2. **Assumptions** — copy from §14, prefixed with one line each on *why* the assumption is safe.
-3. **Decisions & trade-offs** — short prose for each material decision: single-service vs two-service; synchronous vs fire-and-forget; DOM vs streaming; trust `<summary-marks>`; intra-request dedup in app code; **empty batch returns 422 `empty_batch`** (brief is silent on zero-records; we reject loudly rather than 200 silently — see §7.4); **no application-layer rounding on aggregate stats** (§8.5).
+3. **Decisions & trade-offs** — short prose for each material decision: single-service vs two-service; synchronous vs fire-and-forget; DOM vs streaming; trust `<summary-marks>`; intra-request dedup in app code; **empty batch returns 200 no-op** (brief is silent on zero-records; a well-formed document with nothing to persist is treated as a vacuously successful submission — see §7.4); **no application-layer rounding on aggregate stats** (§8.5).
 4. **Excluded (deliberately)** — copy from §13.1.
 5. **Real-time dashboards (write-up only)** — ≤200 words. ASCII flow: `POST /import → COMMIT → outbox publisher → consumer → Redis pre-aggregated cache → SSE → dashboard`. State explicitly that `/aggregate` remains the canonical answer.
 6. **Future work** — copy from §13.2.

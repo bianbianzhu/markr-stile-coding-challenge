@@ -37,8 +37,5 @@ def test_exactly_max_records_allowed():
     assert len(rs) == MAX_RECORDS
 
 
-def test_zero_records_422_empty_batch():
-    with pytest.raises(MarkrHTTPException) as ei:
-        gate_root_and_count(safe_parse(_xml(0)))
-    assert ei.value.status_code == 422
-    assert ei.value.error == "empty_batch"
+def test_zero_records_returns_empty_list():
+    assert gate_root_and_count(safe_parse(_xml(0))) == []

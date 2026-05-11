@@ -39,6 +39,19 @@ async def test_post_happy(app):
 
 
 @pytest.mark.asyncio
+async def test_post_empty_batch_returns_200(app):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        response = await c.post(
+            "/import",
+            content=b"<mcq-test-results></mcq-test-results>",
+            headers={"content-type": "text/xml+markr"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
 async def test_post_wrong_content_type(app):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         response = await c.post(
